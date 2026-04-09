@@ -51,8 +51,8 @@ function PreviewControls() {
 
 function PreviewCanvas() {
   const composition = useComposition();
-  const width = composition?.width ?? 1920;
-  const height = composition?.height ?? 1080;
+  const width = composition?.settings.width ?? 1920;
+  const height = composition?.settings.height ?? 1080;
 
   return (
     <PreviewRoot>

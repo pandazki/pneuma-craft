@@ -41,6 +41,10 @@ function CompoundPlayhead() {
   return <TimelinePlayhead position={state.playheadPosition} timeToPixels={state.timeToPixels} />;
 }
 
+function CompoundBody({ children }: { children: React.ReactNode }) {
+  return <div className="pc-timeline-body">{children}</div>;
+}
+
 function TimelineBase({
   className,
   style,
@@ -57,10 +61,10 @@ function TimelineBase({
             {children ?? (
               <>
                 <CompoundToolbar />
-                <div className="pc-timeline-body">
+                <CompoundBody>
                   <CompoundTrackList />
                   <CompoundPlayhead />
-                </div>
+                </CompoundBody>
               </>
             )}
           </div>
@@ -72,6 +76,7 @@ function TimelineBase({
 
 export const Timeline = Object.assign(TimelineBase, {
   Toolbar: CompoundToolbar,
+  Body: CompoundBody,
   TrackList: CompoundTrackList,
   Playhead: CompoundPlayhead,
 });
