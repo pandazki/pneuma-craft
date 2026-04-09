@@ -1,0 +1,61 @@
+.pc-provenance-tree {
+  font-size: var(--pc-font-size-sm);
+  padding: var(--pc-space-2);
+}
+
+.pc-provenance-node {
+  display: flex;
+  flex-direction: column;
+}
+
+.pc-provenance-node-row {
+  display: flex;
+  align-items: center;
+  gap: var(--pc-space-1);
+  padding: var(--pc-space-1) var(--pc-space-2);
+  border-radius: var(--pc-radius-sm);
+  cursor: pointer;
+  transition: background var(--pc-transition);
+}
+
+.pc-provenance-node-row:hover {
+  background: var(--pc-surface-hover);
+}
+
+.pc-provenance-node-toggle {
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform var(--pc-transition);
+  color: var(--pc-fg-dim);
+}
+
+.pc-provenance-node-toggle--expanded {
+  transform: rotate(90deg);
+}
+
+.pc-provenance-node-toggle--hidden {
+  visibility: hidden;
+}
+
+.pc-provenance-node-name {
+  color: var(--pc-fg);
+}
+
+.pc-provenance-node-type {
+  font-size: var(--pc-font-size-xs);
+  color: var(--pc-fg-dim);
+}
+
+.pc-provenance-node-children {
+  /* Indentation handled by inline padding-left */
+}
+
+.pc-provenance-empty {
+  color: var(--pc-fg-dim);
+  font-size: var(--pc-font-size-sm);
+  text-align: center;
+  padding: var(--pc-space-4);
+}
