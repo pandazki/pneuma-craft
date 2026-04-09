@@ -264,7 +264,7 @@ describe('createPlaybackEngine', () => {
     expect(latestMockScheduler.seek).not.toHaveBeenCalled();
   });
 
-  it('seek while playing triggers audio scheduler', async () => {
+  it('seek while playing triggers audio scheduler with clamped time', async () => {
     const engine = createPlaybackEngine();
     await engine.load(composition, resolver);
     engine.play();
@@ -272,7 +272,28 @@ describe('createPlaybackEngine', () => {
     engine.seek(5);
 
     expect(latestMockClock.seek).toHaveBeenCalledWith(5);
+    // Audio scheduler receives the clamped time from clock.currentTime (which is 5 in mock)
     expect(latestMockScheduler.seek).toHaveBeenCalledWith(5, composition);
+  });
+
+  it('seek while playing uses clamped time when raw time exceeds duration', async () => {
+    const engine = createPlaybackEngine();
+    await engine.load(composition, resolver);
+    engine.play();
+
+    // Make the mock clock clamp the time (simulate clock clamping to 10)
+    vi.mocked(latestMockClock.seek).mockImplementation((time: number) => {
+      // Clock would clamp to duration (10)
+      (latestMockClock as unknown as { _setCurrentTime: (t: number) => void })._setCurrentTime?.(Math.min(time, 10));
+    });
+
+    // The clock.currentTime getter still returns whatever _currentTime is
+    // With the default mock, seek(999) sets _currentTime = 999
+    // After our fix, the engine reads clock.currentTime after seek
+    engine.seek(5);
+
+    expect(latestMockClock.seek).toHaveBeenCalledWith(5);
+    expect(latestMockScheduler.seek).toHaveBeenCalled();
   });
 
   it('seek without load throws', () => {

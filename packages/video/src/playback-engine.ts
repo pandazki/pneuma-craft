@@ -226,7 +226,8 @@ export function createPlaybackEngine(options?: PlaybackEngineOptions): PlaybackE
 
       _clock.play();
       _audioScheduler.setPlaybackRate(_playbackRate);
-      _audioScheduler.play(_clock.currentTime, _composition);
+      const clockRef = _clock;
+      _audioScheduler.play(_clock.currentTime, _composition, () => clockRef.currentTime);
       setState('playing');
       startRafLoop();
     },
@@ -246,20 +247,22 @@ export function createPlaybackEngine(options?: PlaybackEngineOptions): PlaybackE
       }
 
       _clock.seek(time);
+      // Use the clamped time from clock so audio/video stay in sync
+      const clampedTime = _clock.currentTime;
 
       // Only reschedule audio when playing — seeking while paused should not produce sound
       if (_state === 'playing') {
         _audioScheduler.setPlaybackRate(_playbackRate);
-        _audioScheduler.seek(time, _composition);
+        _audioScheduler.seek(clampedTime, _composition);
       }
 
       // If not playing, render the frame at the seeked position
       if (_state !== 'playing' && _frameRenderer) {
         const thisSeekId = ++_seekId;
-        _frameRenderer.renderFrame(_composition, time).then(frame => {
+        _frameRenderer.renderFrame(_composition, clampedTime).then(frame => {
           if (thisSeekId !== _seekId) return; // Stale render, discard
           emitFrameRendered(frame);
-          emitTimeUpdate(time);
+          emitTimeUpdate(clampedTime);
         }).catch(err => {
           console.error('[PlaybackEngine] seek render error:', err);
         });

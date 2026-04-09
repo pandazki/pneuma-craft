@@ -22,14 +22,15 @@ export function createAudioScheduler(options: AudioSchedulerOptions): AudioSched
   // Per-track volume (separate from mute): trackId → volume
   const trackVolumes = new Map<string, number>();
 
+  // Per-track muted state: trackId → muted
+  const trackMutedStates = new Map<string, boolean>();
+
   // Currently active sources
   let activeSources: ActiveSource[] = [];
 
   // Scheduler tick state for future clip scheduling
   let schedulerIntervalId: ReturnType<typeof setInterval> | null = null;
   let scheduledClipIds = new Set<string>();
-  let playStartContextTime = 0;
-  let playFromTime = 0;
   let currentComposition: Composition | null = null;
 
   // Playback rate (applied to elapsed time and source nodes)
@@ -37,6 +38,9 @@ export function createAudioScheduler(options: AudioSchedulerOptions): AudioSched
 
   // Previous timeline time for loop-wrap detection
   let _prevTimelineTime = 0;
+
+  // Callback to get current timeline time from the master clock (loop-aware)
+  let _getCurrentTime: (() => number) | null = null;
 
   // Look-ahead window in seconds
   const LOOK_AHEAD = 0.2;
@@ -113,7 +117,8 @@ export function createAudioScheduler(options: AudioSchedulerOptions): AudioSched
 
     if (clip.startTime > fromTime) {
       // Future clip: schedule it to start at the correct AudioContext time
-      const timeUntilClipStart = clip.startTime - fromTime;
+      // Divide by playbackRate: at 2x rate, 1 timeline second = 0.5 real seconds
+      const timeUntilClipStart = (clip.startTime - fromTime) / _playbackRate;
       contextStartTime = now + timeUntilClipStart;
       sourceOffset = clip.inPoint;
       remainingDuration = clip.duration;
@@ -185,14 +190,23 @@ export function createAudioScheduler(options: AudioSchedulerOptions): AudioSched
 
   function startSchedulerTick(fromTime: number, composition: Composition): void {
     clearSchedulerTick();
-    playStartContextTime = audioContext.currentTime;
-    playFromTime = fromTime;
     currentComposition = composition;
+
+    // Fallback values for computing timeline time when no getCurrentTime callback
+    const tickStartContextTime = audioContext.currentTime;
+    const tickStartFromTime = fromTime;
 
     schedulerIntervalId = setInterval(() => {
       if (!currentComposition) return;
-      const elapsed = (audioContext.currentTime - playStartContextTime) * _playbackRate;
-      const currentTimelineTime = playFromTime + elapsed;
+
+      // Use clock's getCurrentTime if available (loop-aware), otherwise fallback
+      let currentTimelineTime: number;
+      if (_getCurrentTime) {
+        currentTimelineTime = _getCurrentTime();
+      } else {
+        const elapsed = (audioContext.currentTime - tickStartContextTime) * _playbackRate;
+        currentTimelineTime = tickStartFromTime + elapsed;
+      }
 
       // Detect loop wrap: timeline time went backwards
       if (currentTimelineTime < _prevTimelineTime) {
@@ -225,11 +239,12 @@ export function createAudioScheduler(options: AudioSchedulerOptions): AudioSched
       clipBuffers.set(clipId, audioBuffer);
     },
 
-    play(fromTime: number, composition: Composition): void {
+    play(fromTime: number, composition: Composition, getCurrentTime?: () => number): void {
       stopAllSources();
       clearSchedulerTick();
       scheduledClipIds = new Set();
       _prevTimelineTime = fromTime;
+      _getCurrentTime = getCurrentTime ?? null;
       scheduleComposition(fromTime, composition);
       startSchedulerTick(fromTime, composition);
     },
@@ -257,11 +272,16 @@ export function createAudioScheduler(options: AudioSchedulerOptions): AudioSched
       trackVolumes.set(trackId, volume);
       const node = trackGains.get(trackId);
       if (node) {
-        node.gain.value = volume;
+        // Only apply gain if the track is not muted
+        const isMuted = trackMutedStates.get(trackId) ?? false;
+        if (!isMuted) {
+          node.gain.setValueAtTime(volume, audioContext.currentTime);
+        }
       }
     },
 
     setTrackMute(trackId: string, muted: boolean): void {
+      trackMutedStates.set(trackId, muted);
       const node = trackGains.get(trackId);
       if (node) {
         if (muted) {
@@ -283,6 +303,7 @@ export function createAudioScheduler(options: AudioSchedulerOptions): AudioSched
       }
       trackGains.clear();
       trackVolumes.clear();
+      trackMutedStates.clear();
       clipBuffers.clear();
       masterGain.disconnect();
     },

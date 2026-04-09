@@ -89,7 +89,7 @@ export interface MasterClock {
 export interface AudioScheduler {
   readonly audioContext: AudioContext;
   loadClip(clipId: string, audioBuffer: AudioBuffer): void;
-  play(fromTime: number, composition: Composition): void;
+  play(fromTime: number, composition: Composition, getCurrentTime?: () => number): void;
   pause(): void;
   seek(time: number, composition: Composition): void;
   setPlaybackRate(rate: number): void;

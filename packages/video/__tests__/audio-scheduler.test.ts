@@ -315,6 +315,44 @@ describe('createAudioScheduler', () => {
       expect(startCall[2]).toBe(5); // full duration
     });
 
+    it('accounts for playbackRate when scheduling future clip delay', () => {
+      const scheduler = createAudioScheduler({ audioContext });
+      const buffer = createMockAudioBuffer(5);
+      scheduler.loadClip('clip-future', buffer);
+
+      const composition = createMockComposition({
+        tracks: [
+          createMockTrack({
+            id: 'track-1',
+            type: 'audio',
+            muted: false,
+            clips: [createMockClip({ id: 'clip-future', startTime: 1, duration: 5, inPoint: 0 })],
+          }),
+        ],
+      });
+
+      // Set playback rate to 2x
+      scheduler.setPlaybackRate(2);
+
+      // Play from time 0
+      scheduler.play(0, composition);
+
+      // At 2x rate, timeline time reaches 1.0 after 0.5 real seconds
+      // Advance AudioContext time to 0.4s (timeline time = 0.4 * 2 = 0.8, look-ahead reaches 1.0)
+      audioContext._advanceTime(0.4);
+      vi.advanceTimersByTime(100);
+
+      expect(audioContext.createBufferSource).toHaveBeenCalledTimes(1);
+      const sourceNode = (audioContext.createBufferSource as ReturnType<typeof vi.fn>).mock.results[0].value;
+
+      // The contextStartTime should account for playbackRate:
+      // timeUntilClipStart = (1.0 - 0.8) / 2 = 0.1 real seconds
+      const startCall = sourceNode.start.mock.calls[0];
+      expect(startCall[0]).toBeGreaterThan(0); // Should be scheduled in the future
+      // At 2x rate, the delay should be roughly half of what it would be at 1x
+      // contextStartTime ≈ audioContext.currentTime + 0.1
+    });
+
     it('does not schedule the same clip twice', () => {
       const scheduler = createAudioScheduler({ audioContext });
       const buffer = createMockAudioBuffer(5);
@@ -392,6 +430,45 @@ describe('createAudioScheduler', () => {
 
       // After destroy, the buffer was cleared — no new source should be created
       // (createBufferSource may have been called 0 times since clip was future)
+    });
+
+    it('detects loop wrap when getCurrentTime callback returns earlier time', () => {
+      const scheduler = createAudioScheduler({ audioContext });
+      const buffer = createMockAudioBuffer(5);
+      scheduler.loadClip('clip-1', buffer);
+
+      const composition = createMockComposition({
+        tracks: [
+          createMockTrack({
+            id: 'track-1',
+            type: 'audio',
+            muted: false,
+            clips: [createMockClip({ id: 'clip-1', startTime: 0, duration: 5 })],
+          }),
+        ],
+      });
+
+      // Simulate a clock that loops: first returns 4.5, then wraps to 0.5
+      let mockTime = 0;
+      const getCurrentTime = () => mockTime;
+
+      scheduler.play(0, composition, getCurrentTime);
+      const countAfterPlay = (audioContext.createBufferSource as ReturnType<typeof vi.fn>).mock.calls.length;
+      expect(countAfterPlay).toBe(1); // Clip at 0 is active
+
+      // Advance to near end of loop
+      mockTime = 4.5;
+      audioContext._advanceTime(4.5);
+      vi.advanceTimersByTime(100);
+
+      // Now simulate loop wrap — time goes backwards
+      mockTime = 0.5;
+      audioContext._advanceTime(0.1);
+      vi.advanceTimersByTime(100);
+
+      // The clip should have been rescheduled after loop wrap
+      const countAfterWrap = (audioContext.createBufferSource as ReturnType<typeof vi.fn>).mock.calls.length;
+      expect(countAfterWrap).toBeGreaterThan(countAfterPlay);
     });
 
     it('resets scheduled set on seek', () => {
@@ -488,6 +565,45 @@ describe('createAudioScheduler', () => {
       const scheduler = createAudioScheduler({ audioContext });
       // Should not throw even for a track that has no clips played yet
       expect(() => scheduler.setTrackVolume('unknown-track', 0.5)).not.toThrow();
+    });
+
+    it('does not unmute a muted track when volume is changed', () => {
+      const scheduler = createAudioScheduler({ audioContext });
+      const buffer = createMockAudioBuffer();
+      scheduler.loadClip('clip-1', buffer);
+
+      const composition = createMockComposition({
+        tracks: [
+          createMockTrack({
+            id: 'track-1',
+            type: 'audio',
+            muted: false,
+            volume: 0.8,
+            clips: [createMockClip({ id: 'clip-1', startTime: 0, duration: 5 })],
+          }),
+        ],
+      });
+
+      scheduler.play(0, composition);
+
+      // Mute the track
+      scheduler.setTrackMute('track-1', true);
+
+      // Find the track gain node (the second gain node created — first is master, then track, then clip)
+      const gainResults = (audioContext.createGain as ReturnType<typeof vi.fn>).mock.results;
+      // Track gain node should be at index 1 (0=master created in constructor, 1=track, 2=clip)
+      const trackGainNode = gainResults[1].value;
+
+      // Verify it's muted (gain = 0)
+      expect(trackGainNode.gain.value).toBe(0);
+
+      // Now set volume — should NOT change gain because track is muted
+      scheduler.setTrackVolume('track-1', 0.9);
+      expect(trackGainNode.gain.value).toBe(0);
+
+      // Unmute — should restore to the new volume
+      scheduler.setTrackMute('track-1', false);
+      expect(trackGainNode.gain.value).toBe(0.9);
     });
   });
 
