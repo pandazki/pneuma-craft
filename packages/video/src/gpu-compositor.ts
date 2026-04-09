@@ -51,6 +51,9 @@ fn main(@location(0) texCoord: vec2f) -> @location(0) vec4f {
 `;
 
 export async function createGPUCompositor(width: number, height: number): Promise<Compositor> {
+  if (!navigator.gpu) {
+    throw new Error('WebGPU not available');
+  }
   const adapter = await navigator.gpu.requestAdapter();
   if (!adapter) {
     throw new Error('Failed to get WebGPU adapter');
@@ -145,8 +148,8 @@ export async function createGPUCompositor(width: number, height: number): Promis
         const pass = encoder.beginRenderPass({
           colorAttachments: [{
             view: outputView,
-            loadOp: 'clear' as GPULoadOp,
-            storeOp: 'store' as GPUStoreOp,
+            loadOp: 'clear',
+            storeOp: 'store',
             clearValue: { r: 0, g: 0, b: 0, a: 0 },
           }],
         });
@@ -183,12 +186,12 @@ export async function createGPUCompositor(width: number, height: number): Promis
           });
 
           // Render pass: first pass clears, subsequent passes load
-          const loadOp: GPULoadOp = i === 0 ? 'clear' : 'load';
+          const loadOp: 'load' | 'clear' = i === 0 ? 'clear' : 'load';
           const pass = encoder.beginRenderPass({
             colorAttachments: [{
               view: outputView,
               loadOp,
-              storeOp: 'store' as GPUStoreOp,
+              storeOp: 'store',
               ...(loadOp === 'clear' ? { clearValue: { r: 0, g: 0, b: 0, a: 0 } } : {}),
             }],
           });
