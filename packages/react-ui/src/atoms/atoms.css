@@ -54,3 +54,37 @@
   background: var(--pc-surface-hover);
   color: var(--pc-fg);
 }
+
+.pc-panel {
+  background: var(--pc-surface);
+  border: 1px solid var(--pc-border);
+  border-radius: var(--pc-radius-lg);
+  overflow: hidden;
+}
+
+.pc-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--pc-space-2) var(--pc-space-3);
+  border-bottom: 1px solid var(--pc-border);
+  font-size: var(--pc-font-size-sm);
+  font-weight: 500;
+  color: var(--pc-fg-muted);
+}
+
+.pc-panel-body {
+  padding: var(--pc-space-2);
+}
+
+.pc-panel-body--collapsed {
+  display: none;
+}
+
+.pc-panel-toggle {
+  transition: transform var(--pc-transition);
+}
+
+.pc-panel-toggle--collapsed {
+  transform: rotate(-90deg);
+}
