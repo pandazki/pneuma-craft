@@ -26,5 +26,8 @@
     "vitest": "^3.1.0",
     "typescript": "^5.7.0"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "nanoid": "^5.1.7"
+  }
 }
