@@ -7,6 +7,10 @@ export type { CompositorType } from './compositor.js';
 // ── Frame Renderer ─────────────────────────────────────────────────────
 export { createFrameRenderer } from './frame-renderer.js';
 
+// ── Audio Scheduler ─────────────────────────────────────────────────────
+export { createAudioScheduler } from './audio-scheduler.js';
+export type { AudioSchedulerOptions } from './audio-scheduler.js';
+
 // ── Types ──────────────────────────────────────────────────────────────
 export type {
   AssetResolver,
