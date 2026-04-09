@@ -16,3 +16,5 @@ export type {
   CommandEnvelope,
   PneumaCraftCoreState,
 } from './types.js';
+
+export { generateId } from './id.js';
