@@ -184,12 +184,13 @@ export function createPneumaCraftStore(
     },
 
     play(): void {
-      set({ playbackState: 'playing' });
       ensurePlaybackEngine(get, set)
-        .then((engine) => engine.play())
+        .then((engine) => {
+          engine.play();
+          // State will be updated by onStateChange callback
+        })
         .catch((err) => {
-          console.error(err);
-          set({ playbackState: 'idle' });
+          console.error('[PneumaCraft] Failed to start playback:', err);
         });
     },
 
@@ -224,6 +225,10 @@ export function createPneumaCraftStore(
     },
 
     async exportComposition(options: ExportOptions): Promise<Blob> {
+      if (get().exporting) {
+        throw new Error('Export already in progress. Abort the current export first.');
+      }
+
       const composition = get().composition;
       if (!composition) {
         throw new Error('No composition to export');
@@ -265,6 +270,8 @@ export function createPneumaCraftStore(
     destroy(): void {
       engines.playback?.destroy();
       engines.playback = null;
+      engines.export?.abort();
+      engines.export = null;
       frameListeners.clear();
     },
 

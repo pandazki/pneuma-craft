@@ -15,7 +15,9 @@ describe('usePlayback', () => {
     expect(result.current.loop).toBeNull();
   });
 
-  it('play sets state to playing', () => {
+  it('play does not set state optimistically (state is driven by engine callback)', () => {
+    // Without a loaded composition, play() will fail silently and state stays 'idle'.
+    // State transitions to 'playing' only via the PlaybackEngine onStateChange callback.
     const wrapper = createTestWrapper();
     const { result } = renderHook(() => usePlayback(), { wrapper });
 
@@ -23,7 +25,7 @@ describe('usePlayback', () => {
       result.current.play();
     });
 
-    expect(result.current.state).toBe('playing');
+    expect(result.current.state).toBe('idle');
   });
 
   it('pause sets state to paused', () => {

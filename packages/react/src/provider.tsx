@@ -11,6 +11,11 @@ export interface PneumaCraftProviderProps {
    * If you need to change the resolver, use a `key` prop on the Provider to force remount.
    */
   assetResolver: AssetResolver;
+  /**
+   * Compositor backend type. Immutable after mount.
+   * To change, use a `key` prop on the Provider to force remount.
+   * @default 'auto'
+   */
   compositorType?: CompositorType;
 }
 
