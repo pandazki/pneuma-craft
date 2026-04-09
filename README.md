@@ -95,12 +95,64 @@ react → video → timeline → core
 | Video I/O | [MediaBunny](https://mediabunny.dev) (WebCodecs-based) |
 | React | React 19 (only in @pneuma-craft/react) |
 
+## Status
+
+| Package | Status | Description |
+|---------|--------|-------------|
+| `@pneuma-craft/core` | **Implemented** | Event store, command handler, state projection, provenance graph, undo/redo |
+| `@pneuma-craft/timeline` | Scaffolded | Types only |
+| `@pneuma-craft/video` | Scaffolded | Types only |
+| `@pneuma-craft/react` | Scaffolded | Types only |
+
 ## Getting Started
 
 ```bash
 bun install
 bun run build
 bun run test
+```
+
+### Quick Example
+
+```typescript
+import { createCore } from '@pneuma-craft/core';
+
+const core = createCore();
+
+// Human uploads an image
+const [registered] = core.dispatch('human', {
+  type: 'asset:register',
+  asset: { type: 'image', uri: '/photo.jpg', name: 'Photo', metadata: { width: 3000 } },
+});
+const photoId = registered.payload.asset.id;
+
+// Track provenance
+core.dispatch('human', {
+  type: 'provenance:set-root',
+  assetId: photoId,
+  operation: { type: 'upload', actor: 'human', timestamp: Date.now() },
+});
+
+// Agent generates a variant
+const [variant] = core.dispatch('agent', {
+  type: 'asset:register',
+  asset: { type: 'image', uri: '/photo-enhanced.jpg', name: 'Enhanced', metadata: { width: 3000 } },
+});
+
+// Link variant to parent
+core.dispatch('agent', {
+  type: 'provenance:link',
+  fromAssetId: photoId,
+  toAssetId: variant.payload.asset.id,
+  operation: { type: 'derive', actor: 'agent', agentId: 'enhancer', timestamp: Date.now() },
+});
+
+// Undo the last action
+core.undo();
+
+// Query state
+const state = core.getState();
+console.log(state.registry.size); // 2 assets
 ```
 
 ## License
