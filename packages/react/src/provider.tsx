@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import type { AssetResolver, CompositorType } from '@pneuma-craft/video';
 import { PneumaCraftContext } from './context.js';
 import { createPneumaCraftStore, type PneumaCraftStoreApi } from './store.js';
@@ -23,6 +23,12 @@ export function PneumaCraftProvider({
   if (!storeRef.current) {
     storeRef.current = createPneumaCraftStore(assetResolver, compositorType);
   }
+
+  useEffect(() => {
+    return () => {
+      storeRef.current?.getState().destroy();
+    };
+  }, []);
 
   return (
     <PneumaCraftContext.Provider value={storeRef.current}>

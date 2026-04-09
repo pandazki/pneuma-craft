@@ -17,6 +17,7 @@ import type {
   PlaybackEngine,
   ExportEngine,
   CompositorType,
+  RenderedFrame,
 } from '@pneuma-craft/video';
 
 export interface PneumaCraftStore {
@@ -49,6 +50,8 @@ export interface PneumaCraftStore {
   setLoop: (loop: { start: number; end: number } | null) => void;
   exportComposition: (options: ExportOptions) => Promise<Blob>;
   abortExport: () => void;
+  subscribeToFrames: (cb: (frame: RenderedFrame) => void) => () => void;
+  destroy: () => void;
 
   // Internal
   _assetResolver: AssetResolver;
@@ -69,6 +72,9 @@ export function createPneumaCraftStore(
     export: ExportEngine | null;
   } = { playback: null, export: null };
 
+  // Frame rendering listeners for preview
+  const frameListeners = new Set<(frame: RenderedFrame) => void>();
+
   // Track the last composition identity so we can detect changes
   let lastCompositionRef: Composition | null = null;
 
@@ -87,6 +93,9 @@ export function createPneumaCraftStore(
     engine.onStateChange((state) => {
       set({ playbackState: state });
     });
+    engine.onFrameRendered((frame) => {
+      for (const cb of frameListeners) cb(frame);
+    });
 
     const composition = get().composition;
     if (composition) {
@@ -102,9 +111,28 @@ export function createPneumaCraftStore(
     const compositionChanged = composition !== lastCompositionRef;
     lastCompositionRef = composition;
 
-    // If composition changed and playback engine exists, reload it
-    if (compositionChanged && engines.playback && composition) {
-      engines.playback.load(composition, assetResolver).catch(console.error);
+    // If composition changed and playback engine exists, reload or destroy it
+    if (compositionChanged && engines.playback) {
+      if (composition) {
+        engines.playback.load(composition, assetResolver).catch(console.error);
+      } else {
+        engines.playback.destroy();
+        engines.playback = null;
+      }
+    }
+
+    // If composition was removed, reset playback state
+    if (!composition && compositionChanged) {
+      return {
+        coreState: timelineCore.getCoreState(),
+        composition,
+        canUndo: timelineCore.canUndo(),
+        canRedo: timelineCore.canRedo(),
+        events: timelineCore.getEvents(),
+        duration: 0,
+        playbackState: 'idle' as PlaybackState,
+        currentTime: 0,
+      };
     }
 
     return {
@@ -227,6 +255,17 @@ export function createPneumaCraftStore(
       if (engines.export) {
         engines.export.abort();
       }
+    },
+
+    subscribeToFrames(cb: (frame: RenderedFrame) => void): () => void {
+      frameListeners.add(cb);
+      return () => { frameListeners.delete(cb); };
+    },
+
+    destroy(): void {
+      engines.playback?.destroy();
+      engines.playback = null;
+      frameListeners.clear();
     },
 
     // Internal
