@@ -112,6 +112,57 @@ describe('composition:add-clip', () => {
       clip: { assetId: 'nope', startTime: 0, duration: 5, inPoint: 0, outPoint: 5 },
     }))).toThrow();
   });
+
+  it('ripples overlapping clips on same track', () => {
+    const existing = createMockClip({ id: 'c1', startTime: 0, duration: 5 });
+    const track = createMockTrack({ id: 't1', clips: [existing] });
+    const compState = stateWith(createMockComposition({ tracks: [track] }));
+    const core = coreWithAsset('asset-1');
+    const events = handleCompositionCommand(core, compState, makeEnvelope({
+      type: 'composition:add-clip', trackId: 't1',
+      clip: { assetId: 'asset-1', startTime: 0, duration: 3, inPoint: 0, outPoint: 3 },
+    }));
+    // Should produce: clip-added + clip-moved (ripple c1 from 0 to 3)
+    expect(events).toHaveLength(2);
+    expect(events[0].type).toBe('composition:clip-added');
+    expect(events[1].type).toBe('composition:clip-moved');
+    expect(events[1].payload.clipId).toBe('c1');
+    expect(events[1].payload.startTime).toBe(3);
+    expect(events[1].payload.previousStartTime).toBe(0);
+  });
+
+  it('ripples chain of clips', () => {
+    const c1 = createMockClip({ id: 'c1', startTime: 0, duration: 3 });
+    const c2 = createMockClip({ id: 'c2', startTime: 3, duration: 3 });
+    const c3 = createMockClip({ id: 'c3', startTime: 6, duration: 3 });
+    const track = createMockTrack({ id: 't1', clips: [c1, c2, c3] });
+    const compState = stateWith(createMockComposition({ tracks: [track] }));
+    const core = coreWithAsset('asset-1');
+    const events = handleCompositionCommand(core, compState, makeEnvelope({
+      type: 'composition:add-clip', trackId: 't1',
+      clip: { assetId: 'asset-1', startTime: 0, duration: 2, inPoint: 0, outPoint: 2 },
+    }));
+    // Insert at 0 with duration 2 → ripple c1 to 2, c2 to 5, c3 to 8
+    expect(events).toHaveLength(4); // added + 3 ripple moves
+    expect(events[1].payload.clipId).toBe('c1');
+    expect(events[1].payload.startTime).toBe(2);
+    expect(events[2].payload.clipId).toBe('c2');
+    expect(events[2].payload.startTime).toBe(5);
+    expect(events[3].payload.clipId).toBe('c3');
+    expect(events[3].payload.startTime).toBe(8);
+  });
+
+  it('does not ripple when no overlap', () => {
+    const existing = createMockClip({ id: 'c1', startTime: 10, duration: 5 });
+    const track = createMockTrack({ id: 't1', clips: [existing] });
+    const compState = stateWith(createMockComposition({ tracks: [track] }));
+    const core = coreWithAsset('asset-1');
+    const events = handleCompositionCommand(core, compState, makeEnvelope({
+      type: 'composition:add-clip', trackId: 't1',
+      clip: { assetId: 'asset-1', startTime: 0, duration: 3, inPoint: 0, outPoint: 3 },
+    }));
+    expect(events).toHaveLength(1); // just the add, no ripple
+  });
 });
 
 describe('composition:remove-clip', () => {
@@ -156,6 +207,24 @@ describe('composition:move-clip', () => {
     expect(() => handleCompositionCommand(coreState, compState, makeEnvelope({
       type: 'composition:move-clip', clipId: 'c1', startTime: 5, trackId: 't2',
     }))).toThrow();
+  });
+
+  it('ripples overlapping clips on same track when moving', () => {
+    const c1 = createMockClip({ id: 'c1', trackId: 't1', startTime: 0, duration: 5 });
+    const c2 = createMockClip({ id: 'c2', trackId: 't1', startTime: 10, duration: 5 });
+    const track = createMockTrack({ id: 't1', clips: [c1, c2] });
+    const compState = stateWith(createMockComposition({ tracks: [track] }));
+    // Move c1 to startTime=8 → overlaps with c2 at [10,15)
+    const events = handleCompositionCommand(coreState, compState, makeEnvelope({
+      type: 'composition:move-clip', clipId: 'c1', startTime: 8,
+    }));
+    // c1 moved + c2 rippled
+    expect(events).toHaveLength(2);
+    expect(events[0].type).toBe('composition:clip-moved');
+    expect(events[0].payload.clipId).toBe('c1');
+    expect(events[1].type).toBe('composition:clip-moved');
+    expect(events[1].payload.clipId).toBe('c2');
+    expect(events[1].payload.startTime).toBe(13); // 8 + 5 = 13
   });
 });
 

@@ -4,6 +4,55 @@ import type { CompositionCommand, Composition, Track, Clip } from './types.js';
 import type { CompositionState } from './state.js';
 import { findClipById } from './composition-helpers.js';
 
+/**
+ * Generate ripple move events for clips on the same track that would overlap
+ * with a clip placed at [startTime, startTime + duration).
+ * Returns move events for all displaced clips.
+ */
+function generateRippleEvents(
+  envelope: CommandEnvelope<CompositionCommand>,
+  track: Track,
+  startTime: number,
+  duration: number,
+  excludeClipId?: string,
+): Event[] {
+  const clipEnd = startTime + duration;
+  const events: Event[] = [];
+
+  // Find clips that overlap with [startTime, clipEnd) — sorted by startTime
+  const clipsToRipple = track.clips
+    .filter(c => c.id !== excludeClipId && c.startTime < clipEnd && c.startTime + c.duration > startTime)
+    .sort((a, b) => a.startTime - b.startTime);
+
+  if (clipsToRipple.length === 0) return events;
+
+  // Calculate shift: how much to push the first overlapping clip
+  let shift = clipEnd - clipsToRipple[0].startTime;
+  if (shift <= 0) return events;
+
+  // Also ripple any clips after the overlapping ones that would be displaced
+  // by the chain reaction
+  const allAfter = track.clips
+    .filter(c => c.id !== excludeClipId && c.startTime >= startTime)
+    .sort((a, b) => a.startTime - b.startTime);
+
+  let nextFreeTime = clipEnd;
+  for (const c of allAfter) {
+    if (c.startTime >= nextFreeTime) break; // no more overlap in the chain
+    const newStart = nextFreeTime;
+    events.push(makeEvent(envelope, 'composition:clip-moved', {
+      clipId: c.id,
+      startTime: newStart,
+      trackId: undefined,
+      previousStartTime: c.startTime,
+      previousTrackId: track.id,
+    }));
+    nextFreeTime = newStart + c.duration;
+  }
+
+  return events;
+}
+
 function makeEvent(
   envelope: CommandEnvelope<CompositionCommand>,
   type: string,
@@ -93,7 +142,9 @@ export function handleCompositionCommand(
         throw new CommandValidationError(`Asset not found in registry: ${command.clip.assetId}`);
       }
       const clip: Clip = { ...command.clip, id: generateId(), trackId: command.trackId };
-      return [makeEvent(envelope, 'composition:clip-added', { trackId: command.trackId, clip })];
+      const addEvent = makeEvent(envelope, 'composition:clip-added', { trackId: command.trackId, clip });
+      const rippleEvents = generateRippleEvents(envelope, track, clip.startTime, clip.duration);
+      return [addEvent, ...rippleEvents];
     }
 
     case 'composition:remove-clip': {
@@ -109,17 +160,23 @@ export function handleCompositionCommand(
       const composition = requireComposition(compState);
       const { clip, track: sourceTrack } = requireClip(composition, command.clipId);
       requireTrackNotLocked(sourceTrack);
+      const targetTrackId = command.trackId ?? sourceTrack.id;
+      let targetTrack = sourceTrack;
       if (command.trackId && command.trackId !== sourceTrack.id) {
-        const targetTrack = requireTrack(composition, command.trackId);
+        targetTrack = requireTrack(composition, command.trackId);
         requireTrackNotLocked(targetTrack);
       }
-      return [makeEvent(envelope, 'composition:clip-moved', {
+      const moveEvent = makeEvent(envelope, 'composition:clip-moved', {
         clipId: command.clipId,
         startTime: command.startTime,
         trackId: command.trackId,
         previousStartTime: clip.startTime,
         previousTrackId: sourceTrack.id,
-      })];
+      });
+      const rippleEvents = generateRippleEvents(
+        envelope, targetTrack, command.startTime, clip.duration, command.clipId,
+      );
+      return [moveEvent, ...rippleEvents];
     }
 
     case 'composition:trim-clip': {
