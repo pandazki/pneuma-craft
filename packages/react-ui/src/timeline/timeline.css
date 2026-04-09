@@ -78,6 +78,12 @@
   white-space: nowrap;
 }
 
+.pc-timeline-track-status {
+  display: inline-flex;
+  align-items: center;
+  color: var(--pc-fg-dim);
+}
+
 .pc-timeline-track-clips {
   position: relative;
   flex: 1;
