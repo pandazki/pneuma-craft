@@ -102,7 +102,7 @@ react → video → timeline → core
 | `@pneuma-craft/core` | **Implemented** | Event store, command handler, state projection, provenance graph, undo/redo |
 | `@pneuma-craft/timeline` | **Implemented** | Composition model, clip resolution, commands, undo, TimelineCore facade |
 | `@pneuma-craft/video` | **Implemented** | Video engine — decode, composite, preview, export |
-| `@pneuma-craft/react` | Scaffolded | Types only |
+| `@pneuma-craft/react` | **Implemented** | Headless React 19 bindings — Provider, hooks, headless components |
 
 ## Getting Started
 
