@@ -78,32 +78,48 @@ export function createPneumaCraftStore(
   // Track the last composition identity so we can detect changes
   let lastCompositionRef: Composition | null = null;
 
+  // Promise guard to prevent duplicate PlaybackEngine creation
+  let playbackInitPromise: Promise<PlaybackEngine> | null = null;
+
   async function ensurePlaybackEngine(
     get: () => PneumaCraftStore,
     set: (partial: Partial<PneumaCraftStore>) => void,
   ): Promise<PlaybackEngine> {
     if (engines.playback) return engines.playback;
+    if (playbackInitPromise) return playbackInitPromise;
 
-    const { createPlaybackEngine } = await import('@pneuma-craft/video');
-    const engine = createPlaybackEngine({ compositorType: get()._compositorType });
+    playbackInitPromise = (async () => {
+      const { createPlaybackEngine } = await import('@pneuma-craft/video');
+      const engine = createPlaybackEngine({ compositorType: get()._compositorType });
 
-    engine.onTimeUpdate((time) => {
-      set({ currentTime: time });
-    });
-    engine.onStateChange((state) => {
-      set({ playbackState: state });
-    });
-    engine.onFrameRendered((frame) => {
-      for (const cb of frameListeners) cb(frame);
-    });
+      engine.onTimeUpdate((time) => {
+        set({ currentTime: time });
+      });
+      engine.onStateChange((state) => {
+        set({ playbackState: state });
+      });
+      engine.onFrameRendered((frame) => {
+        for (const cb of frameListeners) cb(frame);
+      });
 
-    const composition = get().composition;
-    if (composition) {
-      await engine.load(composition, get()._assetResolver);
+      const composition = get().composition;
+      if (composition) {
+        await engine.load(composition, get()._assetResolver);
+      }
+
+      // Apply deferred playback settings
+      engine.playbackRate = get().playbackRate;
+      engine.loop = get().loop;
+
+      engines.playback = engine;
+      return engine;
+    })();
+
+    try {
+      return await playbackInitPromise;
+    } finally {
+      playbackInitPromise = null;
     }
-
-    engines.playback = engine;
-    return engine;
   }
 
   function syncDomainState(): Partial<PneumaCraftStore> {
@@ -115,6 +131,15 @@ export function createPneumaCraftStore(
     if (compositionChanged && engines.playback) {
       if (composition) {
         engines.playback.load(composition, assetResolver).catch(console.error);
+        return {
+          coreState: timelineCore.getCoreState(),
+          composition,
+          canUndo: timelineCore.canUndo(),
+          canRedo: timelineCore.canRedo(),
+          events: timelineCore.getEvents(),
+          duration: composition.duration,
+          currentTime: 0,
+        };
       } else {
         engines.playback.destroy();
         engines.playback = null;
@@ -234,24 +259,28 @@ export function createPneumaCraftStore(
         throw new Error('No composition to export');
       }
 
-      const { createExportEngine } = await import('@pneuma-craft/video');
-      engines.export = createExportEngine();
-
-      const unsubProgress = engines.export.onProgress((progress) => {
-        set({ exportProgress: progress });
-      });
-
+      // Set guard immediately, synchronously, before any async work
       set({ exporting: true, exportProgress: 0 });
 
       try {
-        const blob = await engines.export.export(composition, options, assetResolver);
-        set({ exporting: false, exportProgress: 1 });
-        return blob;
+        const { createExportEngine } = await import('@pneuma-craft/video');
+        engines.export = createExportEngine();
+
+        const unsubProgress = engines.export.onProgress((progress) => {
+          set({ exportProgress: progress });
+        });
+
+        try {
+          const blob = await engines.export.export(composition, options, assetResolver);
+          set({ exporting: false, exportProgress: 1 });
+          return blob;
+        } finally {
+          unsubProgress();
+        }
       } catch (error) {
         set({ exporting: false, exportProgress: 0 });
         throw error;
       } finally {
-        unsubProgress();
         engines.export = null;
       }
     },
