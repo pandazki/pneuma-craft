@@ -31,6 +31,11 @@ vi.stubGlobal('GPUShaderStage', {
   COMPUTE: 0x4,
 });
 
+vi.stubGlobal('GPUMapMode', {
+  READ: 0x0001,
+  WRITE: 0x0002,
+});
+
 // ── WebGPU Mock Infrastructure ────────────────────────────────────────
 
 function createMockGPUTexture() {
@@ -58,6 +63,7 @@ function createMockGPUCommandEncoder() {
     encoder: {
       beginRenderPass: vi.fn().mockReturnValue(renderPassEncoder),
       copyTextureToTexture: vi.fn(),
+      copyTextureToBuffer: vi.fn(),
       finish: vi.fn().mockReturnValue({ label: 'command-buffer' }),
     },
     renderPassEncoder,
@@ -75,12 +81,12 @@ function createMockGPUDevice() {
     createPipelineLayout: vi.fn().mockReturnValue({ label: 'pipeline-layout' }),
     createBindGroup: vi.fn().mockReturnValue({ label: 'bind-group' }),
     createSampler: vi.fn().mockReturnValue({ label: 'sampler' }),
-    createBuffer: vi.fn().mockReturnValue({
+    createBuffer: vi.fn().mockImplementation((descriptor: { size: number }) => ({
       destroy: vi.fn(),
       mapAsync: vi.fn().mockResolvedValue(undefined),
-      getMappedRange: vi.fn().mockReturnValue(new ArrayBuffer(4)),
+      getMappedRange: vi.fn().mockReturnValue(new ArrayBuffer(descriptor.size)),
       unmap: vi.fn(),
-    }),
+    })),
     createTexture: vi.fn().mockReturnValue(mockTexture),
     createCommandEncoder: vi.fn().mockReturnValue(encoder),
     queue: {
@@ -135,6 +141,7 @@ describe('GPUCompositor', () => {
       const ctx = {
         drawImage: vi.fn(),
         clearRect: vi.fn(),
+        putImageData: vi.fn(),
         globalAlpha: 1,
       };
       return {
@@ -143,6 +150,12 @@ describe('GPUCompositor', () => {
         getContext: vi.fn().mockReturnValue(ctx),
       };
     }));
+
+    vi.stubGlobal('ImageData', vi.fn().mockImplementation((data: Uint8ClampedArray, w: number, h: number) => ({
+      data,
+      width: w,
+      height: h,
+    })));
 
     vi.stubGlobal('createImageBitmap', vi.fn().mockResolvedValue(createMockImageBitmap()));
   });
@@ -289,6 +302,7 @@ describe('createCompositor factory', () => {
       const ctx = {
         drawImage: vi.fn(),
         clearRect: vi.fn(),
+        putImageData: vi.fn(),
         globalAlpha: 1,
       };
       return {
@@ -297,6 +311,12 @@ describe('createCompositor factory', () => {
         getContext: vi.fn().mockReturnValue(ctx),
       };
     }));
+
+    vi.stubGlobal('ImageData', vi.fn().mockImplementation((data: Uint8ClampedArray, w: number, h: number) => ({
+      data,
+      width: w,
+      height: h,
+    })));
 
     vi.stubGlobal('createImageBitmap', vi.fn().mockResolvedValue(createMockImageBitmap()));
   });

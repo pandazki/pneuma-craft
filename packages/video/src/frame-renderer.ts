@@ -29,7 +29,7 @@ export function createFrameRenderer(
         );
         layers.push({
           source,
-          opacity: rc.clip.volume ?? 1,
+          opacity: 1,
           zIndex: i,
         });
       }

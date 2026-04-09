@@ -203,13 +203,43 @@ export async function createGPUCompositor(width: number, height: number): Promis
         }
       }
 
+      // Copy output texture to staging buffer for CPU readback
+      const bytesPerRow = Math.ceil(currentWidth * 4 / 256) * 256;
+      const bufferSize = bytesPerRow * currentHeight;
+      const stagingBuffer = device.createBuffer({
+        size: bufferSize,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+      });
+
+      encoder.copyTextureToBuffer(
+        { texture: outputTexture },
+        { buffer: stagingBuffer, bytesPerRow },
+        { width: currentWidth, height: currentHeight },
+      );
+
       device.queue.submit([encoder.finish()]);
 
-      // Read back result via OffscreenCanvas
+      // Read back pixels from staging buffer
+      await stagingBuffer.mapAsync(GPUMapMode.READ);
+      const rawData = stagingBuffer.getMappedRange();
+
+      // Copy pixel data row by row (bytesPerRow may have padding)
+      const pixelData = new Uint8ClampedArray(currentWidth * currentHeight * 4);
+      const src = new Uint8Array(rawData);
+      for (let row = 0; row < currentHeight; row++) {
+        const srcOffset = row * bytesPerRow;
+        const dstOffset = row * currentWidth * 4;
+        pixelData.set(src.subarray(srcOffset, srcOffset + currentWidth * 4), dstOffset);
+      }
+
+      stagingBuffer.unmap();
+      stagingBuffer.destroy();
+
+      // Put pixels into an OffscreenCanvas and create ImageBitmap
       const readbackCanvas = new OffscreenCanvas(currentWidth, currentHeight);
       const ctx = readbackCanvas.getContext('2d')!;
-      // In a real implementation we'd use copyBufferToTexture + mapAsync,
-      // but for compatibility we use createImageBitmap from the canvas
+      const imageData = new ImageData(pixelData, currentWidth, currentHeight);
+      ctx.putImageData(imageData, 0, 0);
       return createImageBitmap(readbackCanvas);
     },
 

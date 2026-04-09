@@ -154,7 +154,7 @@ describe('createFrameRenderer', () => {
     expect(layers[0].opacity).toBe(1);
   });
 
-  it('uses clip volume when set', async () => {
+  it('ignores clip volume for visual opacity — volume is audio only', async () => {
     const decoder = createMockMediaDecoder();
     const compositor = createMockCompositor();
     const renderer = createFrameRenderer(decoder, compositor, 1920, 1080);
@@ -166,7 +166,8 @@ describe('createFrameRenderer', () => {
     await renderer.renderFrame(composition, 2);
 
     const [[layers]] = vi.mocked(compositor.composite).mock.calls;
-    expect(layers[0].opacity).toBe(0.5);
+    // clip.volume should NOT affect visual opacity — opacity is always 1
+    expect(layers[0].opacity).toBe(1);
   });
 
   it('destroy calls decoder.destroy and compositor.destroy', () => {

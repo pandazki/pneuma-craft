@@ -34,7 +34,7 @@ export function createOfflineAudioRenderer(): OfflineAudioRenderer {
         source.buffer = buffer;
 
         const clipGain = offlineCtx.createGain();
-        const clipVolume = (clip as Clip & { volume?: number }).volume ?? 1;
+        const clipVolume = clip.volume ?? 1;
         clipGain.gain.value = clipVolume;
 
         const trackGain = offlineCtx.createGain();
@@ -45,8 +45,8 @@ export function createOfflineAudioRenderer(): OfflineAudioRenderer {
         trackGain.connect(offlineCtx.destination);
 
         // Fade automation
-        const fadeIn = (clip as Clip & { fadeIn?: number }).fadeIn;
-        const fadeOut = (clip as Clip & { fadeOut?: number }).fadeOut;
+        const fadeIn = clip.fadeIn;
+        const fadeOut = clip.fadeOut;
 
         if (fadeIn && fadeIn > 0) {
           clipGain.gain.setValueAtTime(0, clip.startTime);
