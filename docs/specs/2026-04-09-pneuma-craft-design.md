@@ -685,7 +685,7 @@ pneuma-craft/
 │   ├── command-reference.md
 │   └── event-catalog.md
 ├── package.json
-├── bunfig.toml              # Bun config (if needed)
+├── bun.lock                 # Bun lockfile
 ├── turbo.json
 ├── tsconfig.json
 ├── CLAUDE.md

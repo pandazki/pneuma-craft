@@ -15,7 +15,8 @@
 ```
 packages/core/
 ├── src/
-│   ├── types.ts              # (existing) Domain types — no changes needed
+│   ├── types.ts              # (existing) Domain types + internal typed event union
+│   ├── events.ts             # CoreEvent discriminated union (typed payloads)
 │   ├── id.ts                 # ID generation via nanoid
 │   ├── event-store.ts        # Append-only event log with subscriptions
 │   ├── state.ts              # createInitialState, applyEvent, projectState
@@ -98,6 +99,128 @@ Expected: PASS
 ```bash
 git add packages/core/package.json packages/core/src/id.ts packages/core/__tests__/id.test.ts bun.lock
 git commit -m "feat(core): add ID generation with nanoid"
+```
+
+---
+
+### Task 1b: Typed Event Definitions
+
+Addresses review finding: `Record<string, unknown>` payloads are a type-safety escape hatch. Define a discriminated union of internal typed events so `applyEvent` and `invertEvent` get compile-time payload checking.
+
+**Files:**
+- Create: `packages/core/src/events.ts`
+
+- [ ] **Step 1: Create typed event union**
+
+```typescript
+// packages/core/src/events.ts
+import type { Asset, AssetMetadata, Operation, Selection, ProvenanceEdge } from './types.js';
+
+// ── Asset events ────────────────────────────────────────────────────────
+
+interface AssetRegisteredEvent {
+  readonly type: 'asset:registered';
+  readonly payload: { readonly asset: Asset };
+}
+
+interface AssetRemovedEvent {
+  readonly type: 'asset:removed';
+  readonly payload: { readonly assetId: string; readonly asset: Asset };
+}
+
+interface AssetMetadataUpdatedEvent {
+  readonly type: 'asset:metadata-updated';
+  readonly payload: {
+    readonly assetId: string;
+    readonly metadata: Partial<AssetMetadata>;
+    readonly previousMetadata: AssetMetadata;
+  };
+}
+
+interface AssetTaggedEvent {
+  readonly type: 'asset:tagged';
+  readonly payload: {
+    readonly assetId: string;
+    readonly tags: string[];
+    readonly previousTags: string[] | undefined;
+  };
+}
+
+// ── Provenance events ───────────────────────────────────────────────────
+
+interface ProvenanceRootSetEvent {
+  readonly type: 'provenance:root-set';
+  readonly payload: {
+    readonly assetId: string;
+    readonly operation: Operation;
+    readonly edgeId: string;
+  };
+}
+
+interface ProvenanceLinkedEvent {
+  readonly type: 'provenance:linked';
+  readonly payload: {
+    readonly edgeId: string;
+    readonly fromAssetId: string | null;
+    readonly toAssetId: string;
+    readonly operation: Operation;
+  };
+}
+
+interface ProvenanceUnlinkedEvent {
+  readonly type: 'provenance:unlinked';
+  readonly payload: {
+    readonly edgeId: string;
+    readonly edge: ProvenanceEdge;
+  };
+}
+
+// ── Selection events ────────────────────────────────────────────────────
+
+interface SelectionSetEvent {
+  readonly type: 'selection:set';
+  readonly payload: {
+    readonly selection: Selection;
+    readonly previousSelection: Selection;
+  };
+}
+
+interface SelectionClearedEvent {
+  readonly type: 'selection:cleared';
+  readonly payload: {
+    readonly previousSelection: Selection;
+  };
+}
+
+// ── Union ───────────────────────────────────────────────────────────────
+
+export type CoreEvent =
+  | AssetRegisteredEvent
+  | AssetRemovedEvent
+  | AssetMetadataUpdatedEvent
+  | AssetTaggedEvent
+  | ProvenanceRootSetEvent
+  | ProvenanceLinkedEvent
+  | ProvenanceUnlinkedEvent
+  | SelectionSetEvent
+  | SelectionClearedEvent;
+
+/** Narrow a generic Event to a CoreEvent for type-safe payload access. */
+export function asCoreEvent(event: { type: string; payload: Record<string, unknown> }): CoreEvent {
+  return event as CoreEvent;
+}
+```
+
+- [ ] **Step 2: Run typecheck**
+
+Run: `cd packages/core && bun run typecheck`
+Expected: No errors
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add packages/core/src/events.ts
+git commit -m "feat(core): typed CoreEvent discriminated union for payload safety"
 ```
 
 ---
@@ -415,6 +538,26 @@ describe('applyEvent — provenance events', () => {
     expect(state.provenance.nodes.get('p1')!.childIds).not.toContain('c1');
     expect(state.provenance.nodes.get('c1')!.parentIds).not.toContain('p1');
   });
+
+  it('provenance:unlinked removes orphan nodes (no remaining edges)', () => {
+    let state = createInitialState();
+    state = applyEvent(state, makeEvent('asset:registered', { asset: sampleAsset }));
+    state = applyEvent(state, makeEvent('provenance:root-set', {
+      assetId: 'asset-1',
+      operation: { type: 'upload', actor: 'human', timestamp: 1000 },
+      edgeId: 'edge-root',
+    }));
+    expect(state.provenance.nodes.has('asset-1')).toBe(true);
+
+    // Unlink the only edge — node becomes orphan and should be removed
+    state = applyEvent(state, makeEvent('provenance:unlinked', {
+      edgeId: 'edge-root',
+      edge: { id: 'edge-root', fromAssetId: null, toAssetId: 'asset-1',
+        operation: { type: 'upload', actor: 'human', timestamp: 1000 } },
+    }));
+    expect(state.provenance.nodes.has('asset-1')).toBe(false);
+    expect(state.provenance.edges.has('edge-root')).toBe(false);
+  });
 });
 
 describe('applyEvent — selection events', () => {
@@ -473,12 +616,10 @@ Expected: FAIL — cannot resolve `../src/state.js`
 import type {
   PneumaCraftCoreState,
   Event,
-  Asset,
   ProvenanceNode,
   ProvenanceEdge,
-  Selection,
-  Operation,
 } from './types.js';
+import { asCoreEvent } from './events.js';
 
 export function createInitialState(): PneumaCraftCoreState {
   return {
@@ -491,54 +632,53 @@ export function createInitialState(): PneumaCraftCoreState {
   };
 }
 
+/** Check if a node has any remaining edges in the graph. */
+function nodeHasEdges(nodeAssetId: string, edges: Map<string, ProvenanceEdge>): boolean {
+  for (const edge of edges.values()) {
+    if (edge.fromAssetId === nodeAssetId || edge.toAssetId === nodeAssetId) return true;
+  }
+  return false;
+}
+
 export function applyEvent(state: PneumaCraftCoreState, event: Event): PneumaCraftCoreState {
-  switch (event.type) {
+  const e = asCoreEvent(event);
+
+  switch (e.type) {
     case 'asset:registered': {
-      const asset = event.payload.asset as Asset;
       const registry = new Map(state.registry);
-      registry.set(asset.id, asset);
+      registry.set(e.payload.asset.id, e.payload.asset);
       return { ...state, registry };
     }
 
     case 'asset:removed': {
-      const { assetId } = event.payload as { assetId: string };
       const registry = new Map(state.registry);
-      registry.delete(assetId);
+      registry.delete(e.payload.assetId);
       return { ...state, registry };
     }
 
     case 'asset:metadata-updated': {
-      const { assetId, metadata } = event.payload as {
-        assetId: string;
-        metadata: Partial<Asset['metadata']>;
-      };
-      const existing = state.registry.get(assetId);
+      const existing = state.registry.get(e.payload.assetId);
       if (!existing) return state;
-      const updated: Asset = {
+      const updated = {
         ...existing,
-        metadata: { ...existing.metadata, ...metadata },
+        metadata: { ...existing.metadata, ...e.payload.metadata },
       };
       const registry = new Map(state.registry);
-      registry.set(assetId, updated);
+      registry.set(e.payload.assetId, updated);
       return { ...state, registry };
     }
 
     case 'asset:tagged': {
-      const { assetId, tags } = event.payload as { assetId: string; tags: string[] };
-      const existing = state.registry.get(assetId);
+      const existing = state.registry.get(e.payload.assetId);
       if (!existing) return state;
-      const updated: Asset = { ...existing, tags };
+      const updated = { ...existing, tags: e.payload.tags };
       const registry = new Map(state.registry);
-      registry.set(assetId, updated);
+      registry.set(e.payload.assetId, updated);
       return { ...state, registry };
     }
 
     case 'provenance:root-set': {
-      const { assetId, operation, edgeId } = event.payload as {
-        assetId: string;
-        operation: Operation;
-        edgeId: string;
-      };
+      const { assetId, operation, edgeId } = e.payload;
       const nodes = new Map(state.provenance.nodes);
       const edges = new Map(state.provenance.edges);
 
@@ -562,12 +702,7 @@ export function applyEvent(state: PneumaCraftCoreState, event: Event): PneumaCra
     }
 
     case 'provenance:linked': {
-      const { edgeId, fromAssetId, toAssetId, operation } = event.payload as {
-        edgeId: string;
-        fromAssetId: string | null;
-        toAssetId: string;
-        operation: Operation;
-      };
+      const { edgeId, fromAssetId, toAssetId, operation } = e.payload;
       const nodes = new Map(state.provenance.nodes);
       const edges = new Map(state.provenance.edges);
 
@@ -605,10 +740,7 @@ export function applyEvent(state: PneumaCraftCoreState, event: Event): PneumaCra
     }
 
     case 'provenance:unlinked': {
-      const { edgeId, edge: removedEdge } = event.payload as {
-        edgeId: string;
-        edge: ProvenanceEdge;
-      };
+      const { edgeId, edge: removedEdge } = e.payload;
       const nodes = new Map(state.provenance.nodes);
       const edges = new Map(state.provenance.edges);
 
@@ -617,27 +749,42 @@ export function applyEvent(state: PneumaCraftCoreState, event: Event): PneumaCra
       if (removedEdge.fromAssetId !== null) {
         const parentNode = nodes.get(removedEdge.fromAssetId);
         if (parentNode) {
-          nodes.set(removedEdge.fromAssetId, {
+          const updated = {
             ...parentNode,
             childIds: parentNode.childIds.filter(id => id !== removedEdge.toAssetId),
-          });
+          };
+          // Remove orphan node (no parents, no children, no remaining edges)
+          if (updated.parentIds.length === 0 && updated.childIds.length === 0
+              && !nodeHasEdges(removedEdge.fromAssetId, edges)) {
+            nodes.delete(removedEdge.fromAssetId);
+          } else {
+            nodes.set(removedEdge.fromAssetId, updated);
+          }
         }
       }
 
       const childNode = nodes.get(removedEdge.toAssetId);
-      if (childNode && removedEdge.fromAssetId !== null) {
-        nodes.set(removedEdge.toAssetId, {
+      if (childNode) {
+        const updated = {
           ...childNode,
-          parentIds: childNode.parentIds.filter(id => id !== removedEdge.fromAssetId),
-        });
+          parentIds: removedEdge.fromAssetId !== null
+            ? childNode.parentIds.filter(id => id !== removedEdge.fromAssetId)
+            : childNode.parentIds,
+        };
+        // Remove orphan node
+        if (updated.parentIds.length === 0 && updated.childIds.length === 0
+            && !nodeHasEdges(removedEdge.toAssetId, edges)) {
+          nodes.delete(removedEdge.toAssetId);
+        } else {
+          nodes.set(removedEdge.toAssetId, updated);
+        }
       }
 
       return { ...state, provenance: { nodes, edges } };
     }
 
     case 'selection:set': {
-      const { selection } = event.payload as { selection: Selection };
-      return { ...state, selection };
+      return { ...state, selection: e.payload.selection };
     }
 
     case 'selection:cleared': {
@@ -649,6 +796,8 @@ export function applyEvent(state: PneumaCraftCoreState, event: Event): PneumaCra
   }
 }
 
+// Note: projectState is a cold-path function for state recovery.
+// For performance-sensitive use, prefer CraftCore's incremental applyEvent via dispatch().
 export function projectState(events: readonly Event[]): PneumaCraftCoreState {
   return events.reduce<PneumaCraftCoreState>(applyEvent, createInitialState());
 }
@@ -979,6 +1128,27 @@ describe('handleCommand — provenance commands', () => {
         type: 'provenance:link', fromAssetId: 'nope', toAssetId: 'asset-1', operation: op,
       }))).toThrow(CommandValidationError);
     });
+
+    it('throws when link would create a cycle', () => {
+      // Build: A → B → C, then try C → A
+      const a: Asset = { ...sampleAsset, id: 'a' };
+      const b: Asset = { ...sampleAsset, id: 'b' };
+      const c: Asset = { ...sampleAsset, id: 'c' };
+      const op = { type: 'derive' as const, actor: 'agent' as const, timestamp: 2000 };
+
+      let state = createInitialState();
+      state = { ...state, registry: new Map([['a', a], ['b', b], ['c', c]]) };
+      // Build provenance nodes: A → B → C
+      const nodes = new Map<string, import('../src/types.js').ProvenanceNode>();
+      nodes.set('a', { assetId: 'a', parentIds: [], childIds: ['b'], rootOperation: { type: 'upload', actor: 'human', timestamp: 1000 } });
+      nodes.set('b', { assetId: 'b', parentIds: ['a'], childIds: ['c'], rootOperation: op });
+      nodes.set('c', { assetId: 'c', parentIds: ['b'], childIds: [], rootOperation: op });
+      state = { ...state, provenance: { ...state.provenance, nodes } };
+
+      expect(() => handleCommand(state, makeEnvelope({
+        type: 'provenance:link', fromAssetId: 'c', toAssetId: 'a', operation: op,
+      }))).toThrow(CommandValidationError);
+    });
   });
 
   describe('provenance:unlink', () => {
@@ -1040,6 +1210,25 @@ Add these cases to the switch in `packages/core/src/command-handler.ts`, replaci
         requireAsset(state, command.fromAssetId);
       }
       requireAsset(state, command.toAssetId);
+
+      // Cycle detection: BFS up from fromAssetId — if we reach toAssetId, it's a cycle
+      if (command.fromAssetId !== null) {
+        const visited = new Set<string>();
+        const queue = [command.fromAssetId];
+        while (queue.length > 0) {
+          const current = queue.shift()!;
+          if (current === command.toAssetId) {
+            throw new CommandValidationError(
+              `Provenance link would create a cycle: ${command.toAssetId} is an ancestor of ${command.fromAssetId}`,
+            );
+          }
+          if (visited.has(current)) continue;
+          visited.add(current);
+          const node = state.provenance.nodes.get(current);
+          if (node) queue.push(...node.parentIds);
+        }
+      }
+
       return [makeEvent(envelope, 'provenance:linked', {
         edgeId: generateId(),
         fromAssetId: command.fromAssetId,
@@ -1311,6 +1500,7 @@ git commit -m "feat(core): asset registry query functions"
 import { describe, it, expect } from 'vitest';
 import {
   getLineage,
+  getAncestors,
   getVariants,
   getRoots,
   getOperationsByActor,
@@ -1355,8 +1545,8 @@ function buildGraphState() {
   return state;
 }
 
-describe('getLineage', () => {
-  it('returns ancestor chain from asset to root', () => {
+describe('getLineage (primary parent chain)', () => {
+  it('returns first-parent ancestor chain from asset to root', () => {
     const state = buildGraphState();
     const lineage = getLineage(state, 'gc');
     expect(lineage.map(a => a.id)).toEqual(['c1', 'root']);
@@ -1370,6 +1560,37 @@ describe('getLineage', () => {
   it('returns empty for unknown asset', () => {
     const state = buildGraphState();
     expect(getLineage(state, 'unknown')).toEqual([]);
+  });
+});
+
+describe('getAncestors (all ancestors in DAG)', () => {
+  it('returns all ancestors via BFS', () => {
+    const state = buildGraphState();
+    const ancestors = getAncestors(state, 'gc');
+    expect(ancestors.map(a => a.id).sort()).toEqual(['c1', 'root']);
+  });
+
+  it('returns empty for root asset', () => {
+    const state = buildGraphState();
+    expect(getAncestors(state, 'root')).toEqual([]);
+  });
+
+  it('handles multi-parent nodes (composite)', () => {
+    // Add a composite node: merge c1 + c2 → merged
+    const merged: Asset = { id: 'merged', type: 'image', uri: '/m.png', name: 'Merged', metadata: {}, createdAt: 5000 };
+    const compositeOp = { type: 'composite' as const, actor: 'agent' as const, timestamp: 5000 };
+    let state = buildGraphState();
+    state = applyEvent(state, makeEvent('asset:registered', { asset: merged }, 'e9'));
+    state = applyEvent(state, makeEvent('provenance:linked', {
+      edgeId: 'edge-4', fromAssetId: 'c1', toAssetId: 'merged', operation: compositeOp,
+    }, 'e10'));
+    state = applyEvent(state, makeEvent('provenance:linked', {
+      edgeId: 'edge-5', fromAssetId: 'c2', toAssetId: 'merged', operation: compositeOp,
+    }, 'e11'));
+
+    const ancestors = getAncestors(state, 'merged');
+    // Should include c1, c2, and root (via both parents)
+    expect(ancestors.map(a => a.id).sort()).toEqual(['c1', 'c2', 'root']);
   });
 });
 
@@ -1444,6 +1665,11 @@ import type {
   ProvenanceNode,
 } from './types.js';
 
+/**
+ * Primary lineage: follows first parent at each level.
+ * Use for simple "where did this come from?" UI.
+ * For full DAG ancestry (multi-parent), use getAncestors.
+ */
 export function getLineage(
   state: PneumaCraftCoreState,
   assetId: string,
@@ -1468,6 +1694,37 @@ export function getLineage(
   }
 
   return lineage;
+}
+
+/**
+ * All ancestors via BFS. Handles multi-parent DAG (composite operations).
+ * Returns deduplicated list of all ancestor assets.
+ */
+export function getAncestors(
+  state: PneumaCraftCoreState,
+  assetId: string,
+): Asset[] {
+  const ancestors: Asset[] = [];
+  const visited = new Set<string>();
+  const queue: string[] = [];
+
+  const startNode = state.provenance.nodes.get(assetId);
+  if (!startNode) return [];
+  queue.push(...startNode.parentIds);
+
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    if (visited.has(current)) continue;
+    visited.add(current);
+
+    const asset = state.registry.get(current);
+    if (asset) ancestors.push(asset);
+
+    const node = state.provenance.nodes.get(current);
+    if (node) queue.push(...node.parentIds);
+  }
+
+  return ancestors;
 }
 
 export function getVariants(
@@ -1764,7 +2021,8 @@ Expected: FAIL
 
 ```typescript
 // packages/core/src/undo-manager.ts
-import type { Event, ProvenanceEdge, Asset, Operation, Selection } from './types.js';
+import type { Event } from './types.js';
+import { asCoreEvent } from './events.js';
 import { generateId } from './id.js';
 
 interface UndoEntry {
@@ -1781,6 +2039,7 @@ export interface UndoManager {
 }
 
 function invertEvent(event: Event): Event {
+  const e = asCoreEvent(event);
   const base = {
     id: generateId(),
     commandId: event.commandId,
@@ -1788,15 +2047,14 @@ function invertEvent(event: Event): Event {
     timestamp: Date.now(),
   };
 
-  switch (event.type) {
+  switch (e.type) {
     case 'asset:registered': {
-      const asset = event.payload.asset as Asset;
+      const { asset } = e.payload;
       return { ...base, type: 'asset:removed', payload: { assetId: asset.id, asset } };
     }
 
     case 'asset:removed': {
-      const asset = event.payload.asset as Asset;
-      return { ...base, type: 'asset:registered', payload: { asset } };
+      return { ...base, type: 'asset:registered', payload: { asset: e.payload.asset } };
     }
 
     case 'asset:metadata-updated': {
@@ -1804,9 +2062,9 @@ function invertEvent(event: Event): Event {
         ...base,
         type: 'asset:metadata-updated',
         payload: {
-          assetId: event.payload.assetId,
-          metadata: event.payload.previousMetadata,
-          previousMetadata: event.payload.metadata,
+          assetId: e.payload.assetId,
+          metadata: e.payload.previousMetadata,
+          previousMetadata: e.payload.metadata,
         },
       };
     }
@@ -1816,19 +2074,15 @@ function invertEvent(event: Event): Event {
         ...base,
         type: 'asset:tagged',
         payload: {
-          assetId: event.payload.assetId,
-          tags: event.payload.previousTags,
-          previousTags: event.payload.tags,
+          assetId: e.payload.assetId,
+          tags: e.payload.previousTags,
+          previousTags: e.payload.tags,
         },
       };
     }
 
     case 'provenance:root-set': {
-      const { assetId, operation, edgeId } = event.payload as {
-        assetId: string;
-        operation: Operation;
-        edgeId: string;
-      };
+      const { assetId, operation, edgeId } = e.payload;
       return {
         ...base,
         type: 'provenance:unlinked',
@@ -1840,12 +2094,7 @@ function invertEvent(event: Event): Event {
     }
 
     case 'provenance:linked': {
-      const { edgeId, fromAssetId, toAssetId, operation } = event.payload as {
-        edgeId: string;
-        fromAssetId: string | null;
-        toAssetId: string;
-        operation: Operation;
-      };
+      const { edgeId, fromAssetId, toAssetId, operation } = e.payload;
       return {
         ...base,
         type: 'provenance:unlinked',
@@ -1857,7 +2106,7 @@ function invertEvent(event: Event): Event {
     }
 
     case 'provenance:unlinked': {
-      const edge = event.payload.edge as ProvenanceEdge;
+      const { edge } = e.payload;
       return {
         ...base,
         type: 'provenance:linked',
@@ -1871,31 +2120,29 @@ function invertEvent(event: Event): Event {
     }
 
     case 'selection:set': {
-      const { previousSelection, selection } = event.payload as {
-        selection: Selection;
-        previousSelection: Selection;
-      };
-      return {
-        ...base,
-        type: 'selection:set',
-        payload: { selection: previousSelection, previousSelection: selection },
-      };
-    }
-
-    case 'selection:cleared': {
-      const { previousSelection } = event.payload as { previousSelection: Selection };
       return {
         ...base,
         type: 'selection:set',
         payload: {
-          selection: previousSelection,
+          selection: e.payload.previousSelection,
+          previousSelection: e.payload.selection,
+        },
+      };
+    }
+
+    case 'selection:cleared': {
+      return {
+        ...base,
+        type: 'selection:set',
+        payload: {
+          selection: e.payload.previousSelection,
           previousSelection: { type: 'none', ids: [] },
         },
       };
     }
 
     default:
-      throw new Error(`Cannot invert unknown event type: ${event.type}`);
+      throw new Error(`Cannot invert unknown event type: ${(e as Event).type}`);
   }
 }
 
@@ -1922,7 +2169,8 @@ export function createUndoManager(): UndoManager {
       const entry = redoStack.pop();
       if (!entry) return null;
 
-      const reEvents = entry.events.map(e => ({ ...e, id: generateId(), timestamp: Date.now() }));
+      // Preserve original timestamps for correct event ordering in audit views
+      const reEvents = entry.events.map(e => ({ ...e, id: generateId() }));
       undoStack.push({ commandId: entry.commandId, events: reEvents });
       return reEvents;
     },
@@ -2316,9 +2564,14 @@ export { handleCommand, CommandValidationError } from './command-handler.js';
 // ── Asset queries ───────────────────────────────────────────────────────
 export { getAssetById, getAssetsByType, searchAssets } from './asset-queries.js';
 
+// ── Typed events ────────────────────────────────────────────────────────
+export { asCoreEvent } from './events.js';
+export type { CoreEvent } from './events.js';
+
 // ── Provenance queries ──────────────────────────────────────────────────
 export {
   getLineage,
+  getAncestors,
   getVariants,
   getRoots,
   getOperationsByActor,
