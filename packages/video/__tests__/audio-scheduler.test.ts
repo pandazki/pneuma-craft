@@ -783,6 +783,66 @@ describe('createAudioScheduler', () => {
     });
   });
 
+  // ── 9b. setPlaybackRate updates active sources ──────────────────────────
+
+  describe('setPlaybackRate updates active sources', () => {
+    it('updates playbackRate on already-running source nodes', () => {
+      const scheduler = createAudioScheduler({ audioContext });
+      const buffer = createMockAudioBuffer(10);
+      scheduler.loadClip('clip-1', buffer);
+
+      const composition = createMockComposition({
+        tracks: [
+          createMockTrack({
+            id: 'track-1',
+            type: 'audio',
+            muted: false,
+            clips: [createMockClip({ id: 'clip-1', startTime: 0, duration: 10 })],
+          }),
+        ],
+      });
+
+      scheduler.play(0, composition);
+
+      const sourceNode = (audioContext.createBufferSource as ReturnType<typeof vi.fn>).mock.results[0].value;
+      expect(sourceNode.playbackRate.value).toBe(1);
+
+      scheduler.setPlaybackRate(2);
+      expect(sourceNode.playbackRate.value).toBe(2);
+    });
+
+    it('updates playbackRate on multiple active source nodes', () => {
+      const scheduler = createAudioScheduler({ audioContext });
+      const buffer1 = createMockAudioBuffer(10);
+      const buffer2 = createMockAudioBuffer(10);
+      scheduler.loadClip('clip-1', buffer1);
+      scheduler.loadClip('clip-2', buffer2);
+
+      const composition = createMockComposition({
+        tracks: [
+          createMockTrack({
+            id: 'track-1',
+            type: 'audio',
+            muted: false,
+            clips: [
+              createMockClip({ id: 'clip-1', startTime: 0, duration: 10 }),
+              createMockClip({ id: 'clip-2', startTime: 0, duration: 10 }),
+            ],
+          }),
+        ],
+      });
+
+      scheduler.play(0, composition);
+
+      const sourceResults = (audioContext.createBufferSource as ReturnType<typeof vi.fn>).mock.results;
+      scheduler.setPlaybackRate(0.5);
+
+      for (const result of sourceResults) {
+        expect(result.value.playbackRate.value).toBe(0.5);
+      }
+    });
+  });
+
   // ── 10. Fade automation ──────────────────────────────────────────────────
 
   describe('fade automation', () => {

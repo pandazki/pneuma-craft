@@ -162,6 +162,9 @@ export function createPlaybackEngine(options?: PlaybackEngineOptions): PlaybackE
     },
 
     async load(composition: Composition, resolver: AssetResolver): Promise<void> {
+      // Invalidate any pending paused-seek renders from previous session
+      _seekId++;
+
       // If previously loaded, destroy old subsystems
       if (_state !== 'idle') {
         destroySubsystems();
@@ -213,7 +216,7 @@ export function createPlaybackEngine(options?: PlaybackEngineOptions): PlaybackE
       } catch (err) {
         // Clean up any partially-created subsystems
         destroySubsystems();
-        _state = 'idle';
+        setState('idle');
         throw err;
       }
     },

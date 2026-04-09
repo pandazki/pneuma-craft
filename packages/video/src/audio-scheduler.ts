@@ -131,18 +131,20 @@ export function createAudioScheduler(options: AudioSchedulerOptions): AudioSched
     }
 
     // Apply fade automations
+    // Fade durations must be divided by playbackRate since AudioContext runs in real time
     if (clip.fadeIn !== undefined && clip.fadeIn > 0) {
+      const realFadeIn = clip.fadeIn / _playbackRate;
       if (clip.startTime > fromTime) {
         // Future clip: anchor fade to contextStartTime
         clipGain.gain.setValueAtTime(0, contextStartTime);
-        clipGain.gain.linearRampToValueAtTime(clipVolume, contextStartTime + clip.fadeIn);
+        clipGain.gain.linearRampToValueAtTime(clipVolume, contextStartTime + realFadeIn);
       } else {
         const fadeInEnd = clip.startTime + clip.fadeIn;
         if (fromTime < fadeInEnd) {
           // Still within fade-in region
           const fadeElapsed = fromTime - clip.startTime;
           const currentLevel = fadeElapsed > 0 ? (fadeElapsed / clip.fadeIn) * clipVolume : 0;
-          const fadeRemaining = clip.fadeIn - fadeElapsed;
+          const fadeRemaining = (clip.fadeIn - fadeElapsed) / _playbackRate;
           clipGain.gain.setValueAtTime(currentLevel, now);
           clipGain.gain.linearRampToValueAtTime(clipVolume, now + fadeRemaining);
         }
@@ -150,16 +152,18 @@ export function createAudioScheduler(options: AudioSchedulerOptions): AudioSched
     }
 
     if (clip.fadeOut !== undefined && clip.fadeOut > 0) {
+      const realFadeOut = clip.fadeOut / _playbackRate;
+      const realDuration = clip.duration / _playbackRate;
       if (clip.startTime > fromTime) {
         // Future clip: anchor fade to contextStartTime
-        const fadeOutStart = contextStartTime + clip.duration - clip.fadeOut;
+        const fadeOutStart = contextStartTime + realDuration - realFadeOut;
         clipGain.gain.setValueAtTime(clipVolume, fadeOutStart);
-        clipGain.gain.linearRampToValueAtTime(0, contextStartTime + clip.duration);
+        clipGain.gain.linearRampToValueAtTime(0, contextStartTime + realDuration);
       } else {
         const fadeOutStart = clip.startTime + clip.duration - clip.fadeOut;
-        const fadeOutContextTime = now + Math.max(0, fadeOutStart - fromTime);
+        const fadeOutContextTime = now + Math.max(0, (fadeOutStart - fromTime) / _playbackRate);
         clipGain.gain.setValueAtTime(clipVolume, fadeOutContextTime);
-        clipGain.gain.linearRampToValueAtTime(0, fadeOutContextTime + clip.fadeOut);
+        clipGain.gain.linearRampToValueAtTime(0, fadeOutContextTime + realFadeOut);
       }
     }
 
@@ -266,6 +270,9 @@ export function createAudioScheduler(options: AudioSchedulerOptions): AudioSched
 
     setPlaybackRate(rate: number): void {
       _playbackRate = rate;
+      for (const scheduled of activeSources) {
+        scheduled.source.playbackRate.value = rate;
+      }
     },
 
     setTrackVolume(trackId: string, volume: number): void {

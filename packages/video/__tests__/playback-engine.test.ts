@@ -440,6 +440,22 @@ describe('createPlaybackEngine', () => {
     expect(engine.state).toBe('idle');
   });
 
+  it('load failure emits idle state via onStateChange', async () => {
+    const engine = createPlaybackEngine();
+    const states: PlaybackState[] = [];
+    engine.onStateChange(s => states.push(s));
+
+    const { createCompositor } = await import('../src/compositor.js');
+    vi.mocked(createCompositor).mockRejectedValueOnce(new Error('GPU init failed'));
+
+    await expect(engine.load(composition, resolver)).rejects.toThrow('GPU init failed');
+
+    // Should have emitted loading then idle
+    expect(states).toContain('loading');
+    expect(states).toContain('idle');
+    expect(states[states.length - 1]).toBe('idle');
+  });
+
   it('load failure allows subsequent successful load', async () => {
     const engine = createPlaybackEngine();
 
@@ -452,6 +468,37 @@ describe('createPlaybackEngine', () => {
     vi.mocked(createCompositor).mockResolvedValueOnce(mockCompositor);
     await engine.load(composition, resolver);
     expect(engine.state).toBe('ready');
+  });
+
+  // ── 9c. Load invalidates pending paused-seek renders ──────────────
+
+  it('load invalidates pending paused-seek renders from previous session', async () => {
+    const engine = createPlaybackEngine();
+    await engine.load(composition, resolver);
+
+    const frames: RenderedFrame[] = [];
+    engine.onFrameRendered(f => frames.push(f));
+
+    // Create a deferred render for a paused seek
+    let resolveSeekRender: ((frame: RenderedFrame) => void) | undefined;
+    (mockFrameRenderer.renderFrame as ReturnType<typeof vi.fn>).mockImplementationOnce(() => {
+      return new Promise<RenderedFrame>((resolve) => {
+        resolveSeekRender = resolve;
+      });
+    });
+
+    // Seek while paused (state = 'ready') — this kicks off a render
+    engine.seek(3);
+
+    // Now load a new composition — this should invalidate the pending seek
+    await engine.load(composition, resolver);
+
+    // Resolve the old seek render — it should be discarded
+    resolveSeekRender!({ image: createMockImageBitmap(), time: 3, width: 1920, height: 1080 });
+    await new Promise(r => setTimeout(r, 0));
+
+    // No frame should have been emitted from the stale session
+    expect(frames.length).toBe(0);
   });
 
   // ── 10. Audio pre-loading ──────────────────────────────────────────
