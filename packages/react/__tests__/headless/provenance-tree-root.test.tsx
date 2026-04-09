@@ -107,4 +107,153 @@ describe('ProvenanceTreeRoot', () => {
     // The new root should be expanded (expandedIds reset to [asset2Id])
     expect(stateForAsset2.tree!.expanded).toBe(true);
   });
+
+  it('collapsed node has hasChildren=true and empty children array', () => {
+    const Wrapper = createTestWrapper();
+
+    let dispatchFn!: (actor: any, command: any) => any;
+
+    function DispatchCapture() {
+      dispatchFn = usePneumaCraftStore((s) => s.dispatch);
+      return null;
+    }
+
+    const capturedStates: ProvenanceTreeState[] = [];
+
+    function TreeCapture({ assetId }: { assetId: string }) {
+      return (
+        <ProvenanceTreeRoot assetId={assetId}>
+          {(state) => {
+            capturedStates.push(state);
+            return <div data-testid="tree">{assetId}</div>;
+          }}
+        </ProvenanceTreeRoot>
+      );
+    }
+
+    // Initial render to get dispatch
+    const { rerender } = render(
+      <Wrapper>
+        <DispatchCapture />
+      </Wrapper>,
+    );
+
+    let parentId: string;
+    let childId: string;
+
+    act(() => {
+      // Register parent
+      const events1 = dispatchFn('human', {
+        type: 'asset:register',
+        asset: { type: 'video', uri: '/parent.mp4', name: 'Parent', metadata: {} },
+      });
+      parentId = (events1[0] as any).payload.asset.id;
+
+      // Register child
+      const events2 = dispatchFn('human', {
+        type: 'asset:register',
+        asset: { type: 'video', uri: '/child.mp4', name: 'Child', metadata: {} },
+      });
+      childId = (events2[0] as any).payload.asset.id;
+
+      // Set provenance: parent as root
+      dispatchFn('human', {
+        type: 'provenance:set-root',
+        assetId: parentId,
+        operation: 'import',
+      });
+
+      // Link child from parent
+      dispatchFn('human', {
+        type: 'provenance:link',
+        fromAssetId: parentId,
+        toAssetId: childId,
+        operation: 'edit',
+      });
+    });
+
+    // Render tree with parent — root is expanded by default
+    capturedStates.length = 0;
+    rerender(
+      <Wrapper>
+        <DispatchCapture />
+        <TreeCapture assetId={parentId!} />
+      </Wrapper>,
+    );
+
+    const expandedState = capturedStates[capturedStates.length - 1];
+    expect(expandedState.tree).not.toBeNull();
+    expect(expandedState.tree!.hasChildren).toBe(true);
+    expect(expandedState.tree!.children.length).toBe(1);
+
+    // Collapse the root node
+    capturedStates.length = 0;
+    act(() => {
+      expandedState.collapseNode(parentId!);
+    });
+
+    const collapsedState = capturedStates[capturedStates.length - 1];
+    expect(collapsedState.tree!.expanded).toBe(false);
+    expect(collapsedState.tree!.hasChildren).toBe(true);
+    expect(collapsedState.tree!.children.length).toBe(0);
+  });
+
+  it('leaf node has hasChildren=false', () => {
+    const Wrapper = createTestWrapper();
+
+    let dispatchFn!: (actor: any, command: any) => any;
+
+    function DispatchCapture() {
+      dispatchFn = usePneumaCraftStore((s) => s.dispatch);
+      return null;
+    }
+
+    const capturedStates: ProvenanceTreeState[] = [];
+
+    function TreeCapture({ assetId }: { assetId: string }) {
+      return (
+        <ProvenanceTreeRoot assetId={assetId}>
+          {(state) => {
+            capturedStates.push(state);
+            return <div data-testid="tree">{assetId}</div>;
+          }}
+        </ProvenanceTreeRoot>
+      );
+    }
+
+    const { rerender } = render(
+      <Wrapper>
+        <DispatchCapture />
+      </Wrapper>,
+    );
+
+    let leafId: string;
+
+    act(() => {
+      const events = dispatchFn('human', {
+        type: 'asset:register',
+        asset: { type: 'video', uri: '/leaf.mp4', name: 'Leaf', metadata: {} },
+      });
+      leafId = (events[0] as any).payload.asset.id;
+
+      dispatchFn('human', {
+        type: 'provenance:set-root',
+        assetId: leafId,
+        operation: 'import',
+      });
+    });
+
+    capturedStates.length = 0;
+    rerender(
+      <Wrapper>
+        <DispatchCapture />
+        <TreeCapture assetId={leafId!} />
+      </Wrapper>,
+    );
+
+    const state = capturedStates[capturedStates.length - 1];
+    expect(state.tree).not.toBeNull();
+    expect(state.tree!.hasChildren).toBe(false);
+    expect(state.tree!.children.length).toBe(0);
+  });
 });

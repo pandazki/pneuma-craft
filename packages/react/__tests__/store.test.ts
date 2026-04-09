@@ -385,6 +385,20 @@ describe('playback engine lifecycle', () => {
     expect(store.getState().currentTime).toBe(5);
   });
 
+  it('seek before play applies stored currentTime to engine on first play', async () => {
+    const { store } = createStoreWithComposition();
+
+    // Seek before any engine exists
+    store.getState().seek(3.5);
+    expect(store.getState().currentTime).toBe(3.5);
+
+    // Now play — engine is created and should seek to stored time
+    store.getState().play();
+    await flushPromises();
+
+    expect(mockPlaybackEngine.seek).toHaveBeenCalledWith(3.5);
+  });
+
   it('composition change reloads engine when engine exists', async () => {
     const { store, assetId } = createStoreWithComposition();
 
@@ -511,6 +525,27 @@ describe('store destroy', () => {
 
     store.getState().destroy();
     expect(mockPlaybackEngine.destroy).toHaveBeenCalled();
+  });
+
+  it('destroy during lazy init prevents engine from being stored', async () => {
+    const { store } = createStoreWithComposition();
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    // Start play — triggers ensurePlaybackEngine (async import + load)
+    store.getState().play();
+
+    // Destroy immediately — sets destroyed flag before async import resolves
+    store.getState().destroy();
+
+    // Let the async init run — it should detect destroyed and throw
+    await flushPromises();
+
+    // The play() promise should have caught the "Store destroyed" error
+    expect(errorSpy).toHaveBeenCalledWith(
+      '[PneumaCraft] Failed to start playback:',
+      expect.objectContaining({ message: 'Store destroyed' }),
+    );
+    errorSpy.mockRestore();
   });
 
   it('destroy() clears frame listeners', async () => {

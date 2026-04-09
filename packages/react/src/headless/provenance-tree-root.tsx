@@ -6,6 +6,7 @@ export interface ProvenanceTreeNode {
   readonly assetId: string;
   readonly children: ProvenanceTreeNode[];
   readonly expanded: boolean;
+  readonly hasChildren: boolean;
 }
 
 export interface ProvenanceTreeState {
@@ -28,6 +29,7 @@ function buildDisplayTree(
   return {
     assetId: coreNode.assetId,
     expanded,
+    hasChildren: coreNode.children.length > 0,
     children: expanded
       ? coreNode.children.map((child) => buildDisplayTree(child, expandedSet))
       : [],

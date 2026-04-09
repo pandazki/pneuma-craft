@@ -81,6 +81,9 @@ export function createPneumaCraftStore(
   // Promise guard to prevent duplicate PlaybackEngine creation
   let playbackInitPromise: Promise<PlaybackEngine> | null = null;
 
+  // Flag to prevent async continuations after destroy()
+  let destroyed = false;
+
   async function ensurePlaybackEngine(
     get: () => PneumaCraftStore,
     set: (partial: Partial<PneumaCraftStore>) => void,
@@ -90,6 +93,8 @@ export function createPneumaCraftStore(
 
     playbackInitPromise = (async () => {
       const { createPlaybackEngine } = await import('@pneuma-craft/video');
+      if (destroyed) throw new Error('Store destroyed');
+
       const engine = createPlaybackEngine({ compositorType: get()._compositorType });
 
       engine.onTimeUpdate((time) => {
@@ -105,11 +110,19 @@ export function createPneumaCraftStore(
       const composition = get().composition;
       if (composition) {
         await engine.load(composition, get()._assetResolver);
+        if (destroyed) {
+          engine.destroy();
+          throw new Error('Store destroyed');
+        }
       }
 
       // Apply deferred playback settings
       engine.playbackRate = get().playbackRate;
       engine.loop = get().loop;
+      const storedTime = get().currentTime;
+      if (storedTime > 0) {
+        engine.seek(storedTime);
+      }
 
       engines.playback = engine;
       return engine;
@@ -264,6 +277,7 @@ export function createPneumaCraftStore(
 
       try {
         const { createExportEngine } = await import('@pneuma-craft/video');
+        if (destroyed) throw new Error('Store destroyed');
         engines.export = createExportEngine();
 
         const unsubProgress = engines.export.onProgress((progress) => {
@@ -297,6 +311,7 @@ export function createPneumaCraftStore(
     },
 
     destroy(): void {
+      destroyed = true;
       engines.playback?.destroy();
       engines.playback = null;
       engines.export?.abort();
