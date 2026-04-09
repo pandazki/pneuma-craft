@@ -81,7 +81,7 @@ export function createTimelineCore(): TimelineCore {
         events = handleCompositionCommand(
           coreState,
           compState,
-          envelope as CommandEnvelope<CompositionCommand>,
+          envelope as unknown as CommandEnvelope<CompositionCommand>,
         );
       } else {
         events = handleCommand(coreState, envelope);
