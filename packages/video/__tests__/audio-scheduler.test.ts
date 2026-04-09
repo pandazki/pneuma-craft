@@ -197,6 +197,32 @@ describe('createAudioScheduler', () => {
       expect(audioContext.createBufferSource).toHaveBeenCalledTimes(1);
     });
 
+    it('starts already-active clips immediately (contextStartTime = 0) with correct offset', () => {
+      const scheduler = createAudioScheduler({ audioContext });
+      const buffer = createMockAudioBuffer(10);
+      scheduler.loadClip('clip-1', buffer);
+
+      const composition = createMockComposition({
+        tracks: [
+          createMockTrack({
+            id: 'track-1',
+            type: 'audio',
+            muted: false,
+            clips: [createMockClip({ id: 'clip-1', startTime: 2, duration: 10, inPoint: 0 })],
+          }),
+        ],
+      });
+
+      // fromTime = 5, clip started at 2, so elapsed = 3
+      scheduler.play(5, composition);
+
+      const sourceNode = (audioContext.createBufferSource as ReturnType<typeof vi.fn>).mock.results[0].value;
+      const startCall = sourceNode.start.mock.calls[0];
+      expect(startCall[0]).toBe(0); // start immediately
+      expect(startCall[1]).toBe(3); // sourceOffset = inPoint(0) + elapsed(3)
+      expect(startCall[2]).toBe(7); // remainingDuration = 10 - 3
+    });
+
     it('stops existing sources before playing new ones', () => {
       const scheduler = createAudioScheduler({ audioContext });
       const buffer = createMockAudioBuffer();
@@ -253,6 +279,40 @@ describe('createAudioScheduler', () => {
 
       // Clip at 1.0 should now be scheduled within look-ahead
       expect(audioContext.createBufferSource).toHaveBeenCalledTimes(1);
+    });
+
+    it('schedules future clips at correct AudioContext time, not immediately', () => {
+      const scheduler = createAudioScheduler({ audioContext });
+      const buffer = createMockAudioBuffer(5);
+      scheduler.loadClip('clip-future', buffer);
+
+      const composition = createMockComposition({
+        tracks: [
+          createMockTrack({
+            id: 'track-1',
+            type: 'audio',
+            muted: false,
+            clips: [createMockClip({ id: 'clip-future', startTime: 1, duration: 5, inPoint: 0 })],
+          }),
+        ],
+      });
+
+      // Play from time 0
+      scheduler.play(0, composition);
+
+      // Advance to 0.9s so look-ahead reaches 1.1 (clip starts at 1.0)
+      audioContext._advanceTime(0.9);
+      vi.advanceTimersByTime(100);
+
+      expect(audioContext.createBufferSource).toHaveBeenCalledTimes(1);
+      const sourceNode = (audioContext.createBufferSource as ReturnType<typeof vi.fn>).mock.results[0].value;
+
+      // The source should be scheduled at a future AudioContext time, not 0 (immediately)
+      // clip.startTime (1.0) > currentTimelineTime (~0.9), so contextStartTime > 0
+      const startCall = sourceNode.start.mock.calls[0];
+      expect(startCall[0]).toBeGreaterThan(0); // contextStartTime should be > 0
+      expect(startCall[1]).toBe(0); // sourceOffset = inPoint = 0
+      expect(startCall[2]).toBe(5); // full duration
     });
 
     it('does not schedule the same clip twice', () => {

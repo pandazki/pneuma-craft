@@ -39,6 +39,9 @@ export function createPlaybackEngine(options?: PlaybackEngineOptions): PlaybackE
   // rAF handle
   let _rafId: number | null = null;
 
+  // Seek ID counter for discarding stale paused-seek renders
+  let _seekId = 0;
+
   // Subscribers
   const stateChangeListeners = new Set<(state: PlaybackState) => void>();
   const timeUpdateListeners = new Set<(time: number) => void>();
@@ -163,46 +166,53 @@ export function createPlaybackEngine(options?: PlaybackEngineOptions): PlaybackE
 
       setState('loading');
 
-      // Create AudioContext
-      _audioContext = new AudioContext();
+      try {
+        // Create AudioContext
+        _audioContext = new AudioContext();
 
-      // Create subsystems
-      _decoder = createMediaDecoder(resolver);
-      _compositor = await createCompositor(
-        composition.settings.width,
-        composition.settings.height,
-        compositorType,
-      );
-      _frameRenderer = createFrameRenderer(
-        _decoder,
-        _compositor,
-        composition.settings.width,
-        composition.settings.height,
-      );
-      _clock = createMasterClock({
-        audioContext: _audioContext,
-        duration: composition.duration,
-        frameRate: composition.settings.fps,
-      });
-      _audioScheduler = createAudioScheduler({ audioContext: _audioContext });
+        // Create subsystems
+        _decoder = createMediaDecoder(resolver);
+        _compositor = await createCompositor(
+          composition.settings.width,
+          composition.settings.height,
+          compositorType,
+        );
+        _frameRenderer = createFrameRenderer(
+          _decoder,
+          _compositor,
+          composition.settings.width,
+          composition.settings.height,
+        );
+        _clock = createMasterClock({
+          audioContext: _audioContext,
+          duration: composition.duration,
+          frameRate: composition.settings.fps,
+        });
+        _audioScheduler = createAudioScheduler({ audioContext: _audioContext });
 
-      // Apply pending settings
-      _clock.playbackRate = _playbackRate;
-      _clock.loop = _loop;
+        // Apply pending settings
+        _clock.playbackRate = _playbackRate;
+        _clock.loop = _loop;
 
-      _composition = composition;
+        _composition = composition;
 
-      // Pre-load audio for audio track clips
-      const audioClips = composition.tracks
-        .filter(track => track.type === 'audio')
-        .flatMap(track => track.clips);
+        // Pre-load audio for audio track clips
+        const audioClips = composition.tracks
+          .filter(track => track.type === 'audio')
+          .flatMap(track => track.clips);
 
-      for (const clip of audioClips) {
-        const audioBuffer = await _decoder.decodeAudio(clip.assetId);
-        _audioScheduler.loadClip(clip.id, audioBuffer);
+        for (const clip of audioClips) {
+          const audioBuffer = await _decoder.decodeAudio(clip.assetId);
+          _audioScheduler.loadClip(clip.id, audioBuffer);
+        }
+
+        setState('ready');
+      } catch (err) {
+        // Clean up any partially-created subsystems
+        destroySubsystems();
+        _state = 'idle';
+        throw err;
       }
-
-      setState('ready');
     },
 
     play(): void {
@@ -240,7 +250,9 @@ export function createPlaybackEngine(options?: PlaybackEngineOptions): PlaybackE
 
       // If not playing, render the frame at the seeked position
       if (_state !== 'playing' && _frameRenderer) {
+        const thisSeekId = ++_seekId;
         _frameRenderer.renderFrame(_composition, time).then(frame => {
+          if (thisSeekId !== _seekId) return; // Stale render, discard
           emitFrameRendered(frame);
           emitTimeUpdate(time);
         }).catch(err => {

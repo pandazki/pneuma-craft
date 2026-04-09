@@ -279,6 +279,48 @@ describe('createPlaybackEngine', () => {
     expect(() => engine.seek(5)).toThrow();
   });
 
+  it('rapid seeks while paused only emit the last seek result', async () => {
+    const engine = createPlaybackEngine();
+    await engine.load(composition, resolver);
+
+    // Engine is in 'ready' state (not playing)
+    const frames: RenderedFrame[] = [];
+    engine.onFrameRendered(f => frames.push(f));
+
+    // Create a deferred render that we control
+    let resolveFirst: ((frame: RenderedFrame) => void) | undefined;
+    let resolveSecond: ((frame: RenderedFrame) => void) | undefined;
+    let callCount = 0;
+
+    (mockFrameRenderer.renderFrame as ReturnType<typeof vi.fn>).mockImplementation((_comp: Composition, time: number) => {
+      callCount++;
+      if (callCount === 1) {
+        return new Promise<RenderedFrame>((resolve) => {
+          resolveFirst = resolve;
+        });
+      }
+      return new Promise<RenderedFrame>((resolve) => {
+        resolveSecond = resolve;
+      });
+    });
+
+    // Rapid seeks
+    engine.seek(3);
+    engine.seek(7);
+
+    // Resolve the second seek first (out of order)
+    resolveSecond!({ image: createMockImageBitmap(), time: 7, width: 1920, height: 1080 });
+    await new Promise(r => setTimeout(r, 0));
+
+    // Now resolve the first (stale) seek
+    resolveFirst!({ image: createMockImageBitmap(), time: 3, width: 1920, height: 1080 });
+    await new Promise(r => setTimeout(r, 0));
+
+    // Only the second seek result should have been emitted
+    expect(frames.length).toBe(1);
+    expect(frames[0].time).toBe(7);
+  });
+
   // ── 7. onStateChange ───────────────────────────────────────────────
 
   it('onStateChange fires on transitions', async () => {
@@ -361,6 +403,33 @@ describe('createPlaybackEngine', () => {
     engine.onTimeUpdate(t => times.push(t));
     flushRaf();
     expect(times.length).toBe(0);
+  });
+
+  // ── 9b. Load failure recovery ───────────────────────────────────────
+
+  it('load failure resets state to idle', async () => {
+    const engine = createPlaybackEngine();
+
+    // Make compositor creation fail
+    const { createCompositor } = await import('../src/compositor.js');
+    vi.mocked(createCompositor).mockRejectedValueOnce(new Error('GPU init failed'));
+
+    await expect(engine.load(composition, resolver)).rejects.toThrow('GPU init failed');
+    expect(engine.state).toBe('idle');
+  });
+
+  it('load failure allows subsequent successful load', async () => {
+    const engine = createPlaybackEngine();
+
+    // First load fails
+    const { createCompositor } = await import('../src/compositor.js');
+    vi.mocked(createCompositor).mockRejectedValueOnce(new Error('GPU init failed'));
+    await expect(engine.load(composition, resolver)).rejects.toThrow('GPU init failed');
+
+    // Second load should succeed
+    vi.mocked(createCompositor).mockResolvedValueOnce(mockCompositor);
+    await engine.load(composition, resolver);
+    expect(engine.state).toBe('ready');
   });
 
   // ── 10. Audio pre-loading ──────────────────────────────────────────

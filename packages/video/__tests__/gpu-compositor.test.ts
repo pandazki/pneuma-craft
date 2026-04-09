@@ -263,6 +263,48 @@ describe('GPUCompositor', () => {
     expect(calls[1][0].source).toBe(sourceB);
   });
 
+  it('destroys layer textures only after command submission', async () => {
+    // Make createTexture return unique mocks so we can track per-layer destroys
+    const layerTextures: Array<ReturnType<typeof createMockGPUTexture>> = [];
+    let textureCallIndex = 0;
+    mockDevice.createTexture.mockImplementation(() => {
+      textureCallIndex++;
+      // First call is the output texture (during init), subsequent are layer textures
+      if (textureCallIndex === 1) return mockDevice._mockTexture;
+      const tex = createMockGPUTexture();
+      layerTextures.push(tex);
+      return tex;
+    });
+
+    const { createGPUCompositor } = await import('../src/gpu-compositor.js');
+    const compositor = await createGPUCompositor(1920, 1080);
+
+    const sourceA = createMockCanvasImageSource(100, 100);
+    const sourceB = createMockCanvasImageSource(200, 200);
+    const layers: CompositeLayer[] = [
+      { source: sourceA, opacity: 1, zIndex: 0 },
+      { source: sourceB, opacity: 0.5, zIndex: 1 },
+    ];
+
+    // Track submission order
+    let submitCalled = false;
+    mockDevice.queue.submit.mockImplementation(() => {
+      // At the time of submission, layer textures should NOT be destroyed yet
+      for (const tex of layerTextures) {
+        expect(tex.destroy).not.toHaveBeenCalled();
+      }
+      submitCalled = true;
+    });
+
+    await compositor.composite(layers);
+
+    expect(submitCalled).toBe(true);
+    // After composite completes, layer textures should be destroyed
+    for (const tex of layerTextures) {
+      expect(tex.destroy).toHaveBeenCalled();
+    }
+  });
+
   it('resize recreates output texture', async () => {
     const { createGPUCompositor } = await import('../src/gpu-compositor.js');
     const compositor = await createGPUCompositor(1920, 1080);

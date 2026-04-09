@@ -143,6 +143,8 @@ export async function createGPUCompositor(width: number, height: number): Promis
       const encoder = device.createCommandEncoder();
       const outputView = outputTexture.createView();
 
+      const layerTextures: GPUTexture[] = [];
+
       if (sorted.length === 0) {
         // Clear pass only
         const pass = encoder.beginRenderPass({
@@ -164,6 +166,7 @@ export async function createGPUCompositor(width: number, height: number): Promis
             format: 'rgba8unorm',
             usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
           });
+          layerTextures.push(layerTexture);
 
           device.queue.copyExternalImageToTexture(
             { source: layer.source as ImageBitmap },
@@ -200,9 +203,6 @@ export async function createGPUCompositor(width: number, height: number): Promis
           pass.setBindGroup(0, bindGroup);
           pass.draw(6);
           pass.end();
-
-          // Destroy per-layer texture after encoding
-          layerTexture.destroy();
         }
       }
 
@@ -221,6 +221,11 @@ export async function createGPUCompositor(width: number, height: number): Promis
       );
 
       device.queue.submit([encoder.finish()]);
+
+      // Destroy layer textures after command submission
+      for (const tex of layerTextures) {
+        tex.destroy();
+      }
 
       // Read back pixels from staging buffer
       await stagingBuffer.mapAsync(GPUMapMode.READ);

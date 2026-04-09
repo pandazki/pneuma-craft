@@ -95,12 +95,26 @@ export function createAudioScheduler(options: AudioSchedulerOptions): AudioSched
     source.connect(clipGain);
     clipGain.connect(trackGain);
 
-    // Calculate timing offsets
-    const elapsed = fromTime - clip.startTime;
-    const sourceOffset = clip.inPoint + elapsed;
-    const remainingDuration = clip.duration - elapsed;
-
     const now = audioContext.currentTime;
+
+    // Determine if the clip starts in the future relative to current timeline time
+    let contextStartTime: number;
+    let sourceOffset: number;
+    let remainingDuration: number;
+
+    if (clip.startTime > fromTime) {
+      // Future clip: schedule it to start at the correct AudioContext time
+      const timeUntilClipStart = clip.startTime - fromTime;
+      contextStartTime = now + timeUntilClipStart;
+      sourceOffset = clip.inPoint;
+      remainingDuration = clip.duration;
+    } else {
+      // Already active clip: start immediately with offset
+      contextStartTime = 0;
+      const elapsed = fromTime - clip.startTime;
+      sourceOffset = clip.inPoint + elapsed;
+      remainingDuration = clip.duration - elapsed;
+    }
 
     // Apply fade automations
     if (clip.fadeIn !== undefined && clip.fadeIn > 0) {
@@ -122,7 +136,7 @@ export function createAudioScheduler(options: AudioSchedulerOptions): AudioSched
       clipGain.gain.linearRampToValueAtTime(0, fadeOutContextTime + clip.fadeOut);
     }
 
-    source.start(0, sourceOffset, remainingDuration);
+    source.start(contextStartTime, sourceOffset, remainingDuration);
 
     activeSources.push({ source, clipGain });
   }
@@ -166,7 +180,7 @@ export function createAudioScheduler(options: AudioSchedulerOptions): AudioSched
           if (scheduledClipIds.has(clip.id)) continue;
           if (isClipInLookAhead(clip, currentTimelineTime, LOOK_AHEAD) || isClipActiveAt(clip, currentTimelineTime)) {
             scheduledClipIds.add(clip.id);
-            scheduleClip(clip, track, clip.startTime > currentTimelineTime ? clip.startTime : currentTimelineTime);
+            scheduleClip(clip, track, currentTimelineTime);
           }
         }
       }
