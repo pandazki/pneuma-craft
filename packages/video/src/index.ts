@@ -4,6 +4,9 @@ export { createGPUCompositor } from './gpu-compositor.js';
 export { createCompositor } from './compositor.js';
 export type { CompositorType } from './compositor.js';
 
+// ── Frame Renderer ─────────────────────────────────────────────────────
+export { createFrameRenderer } from './frame-renderer.js';
+
 // ── Types ──────────────────────────────────────────────────────────────
 export type {
   AssetResolver,
