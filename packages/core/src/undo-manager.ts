@@ -87,7 +87,7 @@ export function createUndoManager(): UndoManager {
     undo(): Event[] | null {
       const entry = undoStack.pop();
       if (!entry) return null;
-      const compensating = entry.events.toReversed().map(invertEvent);
+      const compensating = [...entry.events].reverse().map(invertEvent);
       redoStack.push(entry);
       return compensating;
     },
