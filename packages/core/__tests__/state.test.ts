@@ -118,6 +118,49 @@ describe('applyEvent — provenance events', () => {
     expect(state.provenance.edges.has('edge-2')).toBe(true);
   });
 
+  it('provenance:root-set preserves existing node relationships', () => {
+    // Link first, then set-root — should not wipe childIds
+    const parentAsset: Asset = { ...sampleAsset, id: 'p1', name: 'Parent' };
+    const childAsset: Asset = { ...sampleAsset, id: 'c1', name: 'Child' };
+    const deriveOp = { type: 'derive' as const, actor: 'agent' as const, timestamp: 2000 };
+    const uploadOp = { type: 'upload' as const, actor: 'human' as const, timestamp: 1000 };
+
+    let state = createInitialState();
+    state = applyEvent(state, makeEvent('asset:registered', { asset: parentAsset }));
+    state = applyEvent(state, makeEvent('asset:registered', { asset: childAsset }));
+    // Link before set-root
+    state = applyEvent(state, makeEvent('provenance:linked', {
+      edgeId: 'e-link', fromAssetId: 'p1', toAssetId: 'c1', operation: deriveOp,
+    }));
+    // Now set-root on parent — should NOT wipe childIds
+    state = applyEvent(state, makeEvent('provenance:root-set', {
+      assetId: 'p1', operation: uploadOp, edgeId: 'e-root',
+    }));
+
+    const node = state.provenance.nodes.get('p1')!;
+    expect(node.childIds).toContain('c1');
+    expect(node.rootOperation.type).toBe('upload');
+  });
+
+  it('provenance:linked creates parent node if it does not exist', () => {
+    const parentAsset: Asset = { ...sampleAsset, id: 'p1', name: 'Parent' };
+    const childAsset: Asset = { ...sampleAsset, id: 'c1', name: 'Child' };
+    const deriveOp = { type: 'derive' as const, actor: 'agent' as const, timestamp: 2000 };
+
+    let state = createInitialState();
+    state = applyEvent(state, makeEvent('asset:registered', { asset: parentAsset }));
+    state = applyEvent(state, makeEvent('asset:registered', { asset: childAsset }));
+    // Link without prior set-root on parent
+    state = applyEvent(state, makeEvent('provenance:linked', {
+      edgeId: 'e-link', fromAssetId: 'p1', toAssetId: 'c1', operation: deriveOp,
+    }));
+
+    // Parent node should exist with c1 as child
+    const parentNode = state.provenance.nodes.get('p1');
+    expect(parentNode).toBeDefined();
+    expect(parentNode!.childIds).toContain('c1');
+  });
+
   it('provenance:unlinked removes edge and updates nodes', () => {
     const parentAsset: Asset = { ...sampleAsset, id: 'p1', name: 'P' };
     const childAsset: Asset = { ...sampleAsset, id: 'c1', name: 'C' };

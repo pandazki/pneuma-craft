@@ -67,10 +67,12 @@ export function applyEvent(state: PneumaCraftCoreState, event: Event): PneumaCra
       const nodes = new Map(state.provenance.nodes);
       const edges = new Map(state.provenance.edges);
 
+      // Merge with existing node if present (preserve parentIds/childIds from prior links)
+      const existing = nodes.get(assetId);
       const node: ProvenanceNode = {
         assetId,
-        parentIds: [],
-        childIds: [],
+        parentIds: existing?.parentIds ?? [],
+        childIds: existing?.childIds ?? [],
         rootOperation: operation,
       };
       nodes.set(assetId, node);
@@ -100,6 +102,14 @@ export function applyEvent(state: PneumaCraftCoreState, event: Event): PneumaCra
           nodes.set(fromAssetId, {
             ...parentNode,
             childIds: [...parentNode.childIds, toAssetId],
+          });
+        } else {
+          // Create node for unseen parent so getVariants/getTree work
+          nodes.set(fromAssetId, {
+            assetId: fromAssetId,
+            parentIds: [],
+            childIds: [toAssetId],
+            rootOperation: operation,
           });
         }
       }
