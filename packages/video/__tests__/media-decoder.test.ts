@@ -7,7 +7,7 @@ const mockVideoTrack = {
   displayWidth: 1920,
   displayHeight: 1080,
   codec: 'avc',
-  computePacketStats: vi.fn().mockResolvedValue({ averageFrameRate: 30 }),
+  computePacketStats: vi.fn().mockResolvedValue({ averagePacketRate: 30 }),
 };
 
 const mockAudioTrack = {
@@ -64,7 +64,7 @@ describe('createMediaDecoder', () => {
     mockInput.computeDuration.mockResolvedValue(10);
     mockCanvasSink.getCanvas.mockResolvedValue({ canvas: mockCanvas, timestamp: 0, duration: 1 / 30 });
     mockAudioBufferSink.getBuffer.mockResolvedValue({ buffer: mockAudioBuffer, timestamp: 0, duration: 10 });
-    mockVideoTrack.computePacketStats.mockResolvedValue({ averageFrameRate: 30 });
+    mockVideoTrack.computePacketStats.mockResolvedValue({ averagePacketRate: 30 });
   });
 
   it('creates a decoder with an asset resolver', () => {
