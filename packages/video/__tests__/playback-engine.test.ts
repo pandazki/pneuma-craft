@@ -76,6 +76,7 @@ function createMockAudioScheduler(): AudioScheduler {
     play: vi.fn(),
     pause: vi.fn(),
     seek: vi.fn(),
+    setPlaybackRate: vi.fn(),
     setTrackVolume: vi.fn(),
     setTrackMute: vi.fn(),
     destroy: vi.fn(),

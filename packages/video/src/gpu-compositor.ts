@@ -69,7 +69,7 @@ export async function createGPUCompositor(width: number, height: number): Promis
 
   // Create uniform buffer for opacity (f32 = 4 bytes, aligned to 16)
   const opacityBuffer = device.createBuffer({
-    size: 4,
+    size: 16,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
 

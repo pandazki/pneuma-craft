@@ -92,6 +92,7 @@ export interface AudioScheduler {
   play(fromTime: number, composition: Composition): void;
   pause(): void;
   seek(time: number, composition: Composition): void;
+  setPlaybackRate(rate: number): void;
   setTrackVolume(trackId: string, volume: number): void;
   setTrackMute(trackId: string, muted: boolean): void;
   destroy(): void;

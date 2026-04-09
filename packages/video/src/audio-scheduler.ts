@@ -32,6 +32,12 @@ export function createAudioScheduler(options: AudioSchedulerOptions): AudioSched
   let playFromTime = 0;
   let currentComposition: Composition | null = null;
 
+  // Playback rate (applied to elapsed time and source nodes)
+  let _playbackRate = 1;
+
+  // Previous timeline time for loop-wrap detection
+  let _prevTimelineTime = 0;
+
   // Look-ahead window in seconds
   const LOOK_AHEAD = 0.2;
 
@@ -91,6 +97,9 @@ export function createAudioScheduler(options: AudioSchedulerOptions): AudioSched
     const source = audioContext.createBufferSource();
     source.buffer = buffer;
 
+    // Apply playback rate to source node
+    source.playbackRate.value = _playbackRate;
+
     // Connect: source → clipGain → trackGain → masterGain → destination
     source.connect(clipGain);
     clipGain.connect(trackGain);
@@ -118,22 +127,35 @@ export function createAudioScheduler(options: AudioSchedulerOptions): AudioSched
 
     // Apply fade automations
     if (clip.fadeIn !== undefined && clip.fadeIn > 0) {
-      const fadeInEnd = clip.startTime + clip.fadeIn;
-      if (fromTime < fadeInEnd) {
-        // Still within fade-in region
-        const fadeElapsed = fromTime - clip.startTime;
-        const currentLevel = fadeElapsed > 0 ? (fadeElapsed / clip.fadeIn) * clipVolume : 0;
-        const fadeRemaining = clip.fadeIn - fadeElapsed;
-        clipGain.gain.setValueAtTime(currentLevel, now);
-        clipGain.gain.linearRampToValueAtTime(clipVolume, now + fadeRemaining);
+      if (clip.startTime > fromTime) {
+        // Future clip: anchor fade to contextStartTime
+        clipGain.gain.setValueAtTime(0, contextStartTime);
+        clipGain.gain.linearRampToValueAtTime(clipVolume, contextStartTime + clip.fadeIn);
+      } else {
+        const fadeInEnd = clip.startTime + clip.fadeIn;
+        if (fromTime < fadeInEnd) {
+          // Still within fade-in region
+          const fadeElapsed = fromTime - clip.startTime;
+          const currentLevel = fadeElapsed > 0 ? (fadeElapsed / clip.fadeIn) * clipVolume : 0;
+          const fadeRemaining = clip.fadeIn - fadeElapsed;
+          clipGain.gain.setValueAtTime(currentLevel, now);
+          clipGain.gain.linearRampToValueAtTime(clipVolume, now + fadeRemaining);
+        }
       }
     }
 
     if (clip.fadeOut !== undefined && clip.fadeOut > 0) {
-      const fadeOutStart = clip.startTime + clip.duration - clip.fadeOut;
-      const fadeOutContextTime = now + Math.max(0, fadeOutStart - fromTime);
-      clipGain.gain.setValueAtTime(clipVolume, fadeOutContextTime);
-      clipGain.gain.linearRampToValueAtTime(0, fadeOutContextTime + clip.fadeOut);
+      if (clip.startTime > fromTime) {
+        // Future clip: anchor fade to contextStartTime
+        const fadeOutStart = contextStartTime + clip.duration - clip.fadeOut;
+        clipGain.gain.setValueAtTime(clipVolume, fadeOutStart);
+        clipGain.gain.linearRampToValueAtTime(0, contextStartTime + clip.duration);
+      } else {
+        const fadeOutStart = clip.startTime + clip.duration - clip.fadeOut;
+        const fadeOutContextTime = now + Math.max(0, fadeOutStart - fromTime);
+        clipGain.gain.setValueAtTime(clipVolume, fadeOutContextTime);
+        clipGain.gain.linearRampToValueAtTime(0, fadeOutContextTime + clip.fadeOut);
+      }
     }
 
     source.start(contextStartTime, sourceOffset, remainingDuration);
@@ -169,8 +191,15 @@ export function createAudioScheduler(options: AudioSchedulerOptions): AudioSched
 
     schedulerIntervalId = setInterval(() => {
       if (!currentComposition) return;
-      const elapsed = audioContext.currentTime - playStartContextTime;
+      const elapsed = (audioContext.currentTime - playStartContextTime) * _playbackRate;
       const currentTimelineTime = playFromTime + elapsed;
+
+      // Detect loop wrap: timeline time went backwards
+      if (currentTimelineTime < _prevTimelineTime) {
+        scheduledClipIds.clear();
+        stopAllSources();
+      }
+      _prevTimelineTime = currentTimelineTime;
 
       for (const track of currentComposition.tracks) {
         if (track.type !== 'audio') continue;
@@ -200,6 +229,7 @@ export function createAudioScheduler(options: AudioSchedulerOptions): AudioSched
       stopAllSources();
       clearSchedulerTick();
       scheduledClipIds = new Set();
+      _prevTimelineTime = fromTime;
       scheduleComposition(fromTime, composition);
       startSchedulerTick(fromTime, composition);
     },
@@ -214,8 +244,13 @@ export function createAudioScheduler(options: AudioSchedulerOptions): AudioSched
       clearSchedulerTick();
       stopAllSources();
       scheduledClipIds = new Set();
+      _prevTimelineTime = time;
       scheduleComposition(time, composition);
       startSchedulerTick(time, composition);
+    },
+
+    setPlaybackRate(rate: number): void {
+      _playbackRate = rate;
     },
 
     setTrackVolume(trackId: string, volume: number): void {

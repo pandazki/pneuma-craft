@@ -146,6 +146,9 @@ export function createPlaybackEngine(options?: PlaybackEngineOptions): PlaybackE
       if (_clock) {
         _clock.playbackRate = rate;
       }
+      if (_audioScheduler) {
+        _audioScheduler.setPlaybackRate(rate);
+      }
     },
 
     get loop() {
@@ -222,6 +225,7 @@ export function createPlaybackEngine(options?: PlaybackEngineOptions): PlaybackE
       if (_state === 'playing') return;
 
       _clock.play();
+      _audioScheduler.setPlaybackRate(_playbackRate);
       _audioScheduler.play(_clock.currentTime, _composition);
       setState('playing');
       startRafLoop();
@@ -245,6 +249,7 @@ export function createPlaybackEngine(options?: PlaybackEngineOptions): PlaybackE
 
       // Only reschedule audio when playing — seeking while paused should not produce sound
       if (_state === 'playing') {
+        _audioScheduler.setPlaybackRate(_playbackRate);
         _audioScheduler.seek(time, _composition);
       }
 
