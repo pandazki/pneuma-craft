@@ -11,6 +11,9 @@ export { createFrameRenderer } from './frame-renderer.js';
 export { createAudioScheduler } from './audio-scheduler.js';
 export type { AudioSchedulerOptions } from './audio-scheduler.js';
 
+// ── Export Engine ──────────────────────────────────────────────────────
+export { createExportEngine } from './export-engine.js';
+
 // ── Types ──────────────────────────────────────────────────────────────
 export type {
   AssetResolver,
