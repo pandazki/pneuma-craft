@@ -100,7 +100,7 @@ react → video → timeline → core
 | Package | Status | Description |
 |---------|--------|-------------|
 | `@pneuma-craft/core` | **Implemented** | Event store, command handler, state projection, provenance graph, undo/redo |
-| `@pneuma-craft/timeline` | Scaffolded | Types only |
+| `@pneuma-craft/timeline` | **Implemented** | Composition model, clip resolution, commands, undo, TimelineCore facade |
 | `@pneuma-craft/video` | Scaffolded | Types only |
 | `@pneuma-craft/react` | Scaffolded | Types only |
 
