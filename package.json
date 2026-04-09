@@ -1,0 +1,21 @@
+{
+  "name": "pneuma-craft",
+  "private": true,
+  "description": "Viewer + State components for human-agent collaborative content creation",
+  "workspaces": [
+    "packages/*",
+    "examples/*"
+  ],
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "clean": "turbo run clean"
+  },
+  "packageManager": "bun@1.3.11",
+  "devDependencies": {
+    "turbo": "^2.5.0",
+    "typescript": "^5.7.0"
+  }
+}
