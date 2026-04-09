@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { getTree, type ProvenanceTreeNode as CoreTreeNode } from '@pneuma-craft/core';
 import { usePneumaCraftStore } from '../context.js';
 
@@ -37,6 +37,10 @@ function buildDisplayTree(
 export function ProvenanceTreeRoot({ assetId, children }: ProvenanceTreeRootProps) {
   const coreState = usePneumaCraftStore((s) => s.coreState);
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(() => new Set([assetId]));
+
+  useEffect(() => {
+    setExpandedNodes(new Set([assetId]));
+  }, [assetId]);
 
   const coreTree = useMemo(() => getTree(coreState, assetId), [coreState, assetId]);
 

@@ -69,13 +69,51 @@ export function createPneumaCraftStore(
     export: ExportEngine | null;
   } = { playback: null, export: null };
 
+  // Track the last composition identity so we can detect changes
+  let lastCompositionRef: Composition | null = null;
+
+  async function ensurePlaybackEngine(
+    get: () => PneumaCraftStore,
+    set: (partial: Partial<PneumaCraftStore>) => void,
+  ): Promise<PlaybackEngine> {
+    if (engines.playback) return engines.playback;
+
+    const { createPlaybackEngine } = await import('@pneuma-craft/video');
+    const engine = createPlaybackEngine({ compositorType: get()._compositorType });
+
+    engine.onTimeUpdate((time) => {
+      set({ currentTime: time });
+    });
+    engine.onStateChange((state) => {
+      set({ playbackState: state });
+    });
+
+    const composition = get().composition;
+    if (composition) {
+      await engine.load(composition, get()._assetResolver);
+    }
+
+    engines.playback = engine;
+    return engine;
+  }
+
   function syncDomainState(): Partial<PneumaCraftStore> {
+    const composition = timelineCore.getComposition();
+    const compositionChanged = composition !== lastCompositionRef;
+    lastCompositionRef = composition;
+
+    // If composition changed and playback engine exists, reload it
+    if (compositionChanged && engines.playback && composition) {
+      engines.playback.load(composition, assetResolver).catch(console.error);
+    }
+
     return {
       coreState: timelineCore.getCoreState(),
-      composition: timelineCore.getComposition(),
+      composition,
       canUndo: timelineCore.canUndo(),
       canRedo: timelineCore.canRedo(),
       events: timelineCore.getEvents(),
+      duration: composition?.duration ?? 0,
     };
   }
 
@@ -118,16 +156,29 @@ export function createPneumaCraftStore(
     },
 
     play(): void {
-      // Playback engine lazily created — stubbed for now
       set({ playbackState: 'playing' });
+      ensurePlaybackEngine(get, set)
+        .then((engine) => engine.play())
+        .catch((err) => {
+          console.error(err);
+          set({ playbackState: 'idle' });
+        });
     },
 
     pause(): void {
-      set({ playbackState: 'paused' });
+      if (engines.playback) {
+        engines.playback.pause();
+      } else {
+        set({ playbackState: 'paused' });
+      }
     },
 
     seek(time: number): void {
-      set({ currentTime: time });
+      if (engines.playback) {
+        engines.playback.seek(time);
+      } else {
+        set({ currentTime: time });
+      }
     },
 
     setPlaybackRate(rate: number): void {

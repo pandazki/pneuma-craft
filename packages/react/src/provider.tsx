@@ -1,10 +1,15 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef } from 'react';
 import type { AssetResolver, CompositorType } from '@pneuma-craft/video';
 import { PneumaCraftContext } from './context.js';
 import { createPneumaCraftStore, type PneumaCraftStoreApi } from './store.js';
 
 export interface PneumaCraftProviderProps {
   children: React.ReactNode;
+  /**
+   * Resolver for loading asset URLs/blobs.
+   * Must be a stable reference (e.g. via useMemo or module-level constant).
+   * If you need to change the resolver, use a `key` prop on the Provider to force remount.
+   */
   assetResolver: AssetResolver;
   compositorType?: CompositorType;
 }
@@ -15,18 +20,8 @@ export function PneumaCraftProvider({
   compositorType = 'auto',
 }: PneumaCraftProviderProps) {
   const storeRef = useRef<PneumaCraftStoreApi | null>(null);
-  const resolverRef = useRef(assetResolver);
-  const compositorRef = useRef(compositorType);
-
-  // Recreate store if resolver or compositor type changes
-  if (
-    !storeRef.current ||
-    resolverRef.current !== assetResolver ||
-    compositorRef.current !== compositorType
-  ) {
+  if (!storeRef.current) {
     storeRef.current = createPneumaCraftStore(assetResolver, compositorType);
-    resolverRef.current = assetResolver;
-    compositorRef.current = compositorType;
   }
 
   return (
