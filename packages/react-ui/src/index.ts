@@ -1,4 +1,4 @@
-// ── Styles ────────────────────────────────────────────────────────────
+// ── Styles (extracted to dist/index.css by tsup, not emitted in JS) ──
 import './styles/tokens.css';
 import './styles/reset.css';
 import './atoms/atoms.css';

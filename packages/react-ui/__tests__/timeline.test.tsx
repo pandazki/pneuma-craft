@@ -35,17 +35,20 @@ describe('Timeline', () => {
     expect(el?.classList.contains('custom')).toBe(true);
   });
 
-  it('renders compound sub-components', () => {
+  it('renders compound sub-components with Body wrapper', () => {
     const { container } = render(
       <Wrapper>
         <Timeline>
           <Timeline.Toolbar />
-          <Timeline.TrackList />
-          <Timeline.Playhead />
+          <Timeline.Body>
+            <Timeline.TrackList />
+            <Timeline.Playhead />
+          </Timeline.Body>
         </Timeline>
       </Wrapper>,
     );
     expect(container.querySelector('.pc-timeline-toolbar')).not.toBeNull();
+    expect(container.querySelector('.pc-timeline-body')).not.toBeNull();
     expect(container.querySelector('.pc-timeline-tracks')).not.toBeNull();
     expect(container.querySelector('.pc-timeline-playhead')).not.toBeNull();
   });
