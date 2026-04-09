@@ -1,3 +1,6 @@
+// ── Compositor ─────────────────────────────────────────────────────────
+export { createCanvas2DCompositor } from './canvas2d-compositor.js';
+
 // ── Types ──────────────────────────────────────────────────────────────
 export type {
   AssetResolver,
