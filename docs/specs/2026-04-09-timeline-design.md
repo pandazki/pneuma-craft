@@ -203,7 +203,34 @@ function resolveFrame(composition: Composition, time: number): ResolvedFrame
 
 **Why half-open interval:** At clip boundaries, `[start, end)` means each time point belongs to exactly one clip. No double-rendering at cut points.
 
-**Muted tracks:** Included in resolution with a flag, or excluded entirely? For MVP, **exclude muted tracks** from `resolveFrame` — the video engine doesn't need to decode frames for muted tracks. Audio muting is handled separately by the audio scheduler.
+**Muted tracks:** For MVP, **exclude muted tracks** from `resolveFrame` — the video engine doesn't need to decode frames for muted tracks. Audio muting is handled separately by the audio scheduler.
+
+### Scope boundary: resolveFrame is pure data
+
+`resolveFrame` is a **pure function** — data in, data out. It does not decode, render, or touch files. It only answers: "at this time, which clips are active and what's their local source time?"
+
+The downstream consumption by `@pneuma-craft/video` looks like this:
+
+```
+resolveFrame(composition, currentTime)
+  → ResolvedFrame { clips: [{ clip, track, localTime }] }
+     │
+     └─ Video PlaybackEngine (in @pneuma-craft/video):
+          ├─ For each video/image clip:
+          │    MediaBunny Input → CanvasSink.getCanvas(localTime)
+          │    → decodes one frame from the source asset
+          │
+          ├─ Compositor (Canvas 2D):
+          │    layers decoded frames by track order → preview canvas
+          │
+          └─ AudioScheduler (Web Audio API):
+               schedules AudioBufferSourceNodes for audio clips
+```
+
+This separation is intentional:
+- **timeline** owns "what should play" (editing model, serializable, undo-able)
+- **video** owns "how to display it" (runtime rendering, transient state)
+- The connection point is `resolveFrame` — timeline exports it, video calls it every frame
 
 ---
 
