@@ -71,6 +71,7 @@ Command → CommandHandler → Event(s) → EventStore → State (projection)
 @pneuma-craft/timeline   Composition model — tracks, clips, time-based arrangement
 @pneuma-craft/video      Video engine — decode, composite, preview, export
 @pneuma-craft/react      React 19 bindings — components, hooks, providers
+@pneuma-craft/react-ui   Styled UI components — Preview, Timeline, AssetLibrary, ProvenanceTree
 ```
 
 Dependency direction:
@@ -103,6 +104,7 @@ react → video → timeline → core
 | `@pneuma-craft/timeline` | **Implemented** | Composition model, clip resolution, commands, undo, TimelineCore facade |
 | `@pneuma-craft/video` | **Implemented** | Video engine — decode, composite, preview, export |
 | `@pneuma-craft/react` | **Implemented** | Headless React 19 bindings — Provider, hooks, headless components |
+| `@pneuma-craft/react-ui` | **Implemented** | Styled components — Preview, Timeline, AssetLibrary, ProvenanceTree |
 
 ## Getting Started
 
