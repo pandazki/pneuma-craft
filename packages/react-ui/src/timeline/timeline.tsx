@@ -6,9 +6,14 @@ import { TimelineTrackList } from './timeline-track-list.js';
 import { TimelinePlayhead } from './timeline-playhead.js';
 import './timeline.css';
 
-const TimelineContext = createContext<TimelineState | null>(null);
+interface TimelineContextValue extends TimelineState {
+  pixelsPerSecond: number;
+  setPixelsPerSecond: (v: number) => void;
+}
 
-function useTimelineContext(): TimelineState {
+const TimelineContext = createContext<TimelineContextValue | null>(null);
+
+function useTimelineContext(): TimelineContextValue {
   const ctx = useContext(TimelineContext);
   if (!ctx) throw new Error('Timeline sub-component must be used within <Timeline>');
   return ctx;
@@ -21,9 +26,9 @@ export interface TimelineProps {
   children?: React.ReactNode;
 }
 
-function CompoundToolbar({ pps, onZoomChange }: { pps?: number; onZoomChange?: (v: number) => void }) {
-  const state = useTimelineContext();
-  return <TimelineToolbar duration={state.duration} pixelsPerSecond={pps ?? 100} onZoomChange={onZoomChange ?? (() => {})} />;
+function CompoundToolbar() {
+  const { duration, pixelsPerSecond, setPixelsPerSecond } = useTimelineContext();
+  return <TimelineToolbar duration={duration} pixelsPerSecond={pixelsPerSecond} onZoomChange={setPixelsPerSecond} />;
 }
 
 function CompoundTrackList() {
@@ -33,7 +38,7 @@ function CompoundTrackList() {
 
 function CompoundPlayhead() {
   const state = useTimelineContext();
-  return <TimelinePlayhead position={state.playheadPosition} />;
+  return <TimelinePlayhead position={state.playheadPosition} timeToPixels={state.timeToPixels} />;
 }
 
 function TimelineBase({
@@ -47,11 +52,11 @@ function TimelineBase({
   return (
     <HeadlessTimeline pixelsPerSecond={pixelsPerSecond}>
       {(state) => (
-        <TimelineContext.Provider value={state}>
+        <TimelineContext.Provider value={{ ...state, pixelsPerSecond, setPixelsPerSecond }}>
           <div className={`pc-timeline ${className ?? ''}`} style={style}>
             {children ?? (
               <>
-                <CompoundToolbar pps={pixelsPerSecond} onZoomChange={setPixelsPerSecond} />
+                <CompoundToolbar />
                 <div className="pc-timeline-body">
                   <CompoundTrackList />
                   <CompoundPlayhead />

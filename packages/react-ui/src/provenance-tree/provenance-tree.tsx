@@ -4,7 +4,11 @@ import type { ProvenanceTreeState } from '@pneuma-craft/react';
 import { ProvenanceTreeNodeView } from './provenance-tree-node.js';
 import './provenance-tree.css';
 
-const ProvenanceTreeContext = createContext<ProvenanceTreeState | null>(null);
+interface ProvenanceTreeContextValue extends ProvenanceTreeState {
+  onAssetSelect?: (assetId: string) => void;
+}
+
+const ProvenanceTreeContext = createContext<ProvenanceTreeContextValue | null>(null);
 
 export interface ProvenanceTreeProps {
   assetId: string;
@@ -18,7 +22,7 @@ function ProvenanceTreeBase({ assetId, className, style, onAssetSelect, children
   return (
     <ProvenanceTreeRoot assetId={assetId}>
       {(state) => (
-        <ProvenanceTreeContext.Provider value={state}>
+        <ProvenanceTreeContext.Provider value={{ ...state, onAssetSelect }}>
           <div className={`pc-provenance-tree ${className ?? ''}`} style={style}>
             {children ?? (
               state.tree ? (
@@ -42,7 +46,7 @@ function ProvenanceTreeBase({ assetId, className, style, onAssetSelect, children
 function CompoundNode() {
   const ctx = useContext(ProvenanceTreeContext);
   if (!ctx || !ctx.tree) return null;
-  return <ProvenanceTreeNodeView node={ctx.tree} depth={0} onToggle={ctx.toggleNode} />;
+  return <ProvenanceTreeNodeView node={ctx.tree} depth={0} onToggle={ctx.toggleNode} onSelect={ctx.onAssetSelect} />;
 }
 
 export const ProvenanceTree = Object.assign(ProvenanceTreeBase, {
