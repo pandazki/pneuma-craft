@@ -232,7 +232,11 @@ export function createPlaybackEngine(options?: PlaybackEngineOptions): PlaybackE
       }
 
       _clock.seek(time);
-      _audioScheduler.seek(time, _composition);
+
+      // Only reschedule audio when playing — seeking while paused should not produce sound
+      if (_state === 'playing') {
+        _audioScheduler.seek(time, _composition);
+      }
 
       // If not playing, render the frame at the seeked position
       if (_state !== 'playing' && _frameRenderer) {

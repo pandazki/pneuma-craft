@@ -252,6 +252,28 @@ describe('createPlaybackEngine', () => {
     expect(latestMockClock.seek).toHaveBeenCalledWith(5);
   });
 
+  it('seek while paused does not trigger audio scheduler', async () => {
+    const engine = createPlaybackEngine();
+    await engine.load(composition, resolver);
+    // State is 'ready' (not playing)
+
+    engine.seek(5);
+
+    expect(latestMockClock.seek).toHaveBeenCalledWith(5);
+    expect(latestMockScheduler.seek).not.toHaveBeenCalled();
+  });
+
+  it('seek while playing triggers audio scheduler', async () => {
+    const engine = createPlaybackEngine();
+    await engine.load(composition, resolver);
+    engine.play();
+
+    engine.seek(5);
+
+    expect(latestMockClock.seek).toHaveBeenCalledWith(5);
+    expect(latestMockScheduler.seek).toHaveBeenCalledWith(5, composition);
+  });
+
   it('seek without load throws', () => {
     const engine = createPlaybackEngine();
     expect(() => engine.seek(5)).toThrow();

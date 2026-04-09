@@ -219,6 +219,28 @@ describe('createMediaDecoder', () => {
     expect(mockInput.dispose).toHaveBeenCalledTimes(2);
   });
 
+  it('retries after a failed fetchBlob instead of caching the rejection', async () => {
+    let callCount = 0;
+    const resolver = createMockResolver({
+      fetchBlob: vi.fn().mockImplementation(async () => {
+        callCount++;
+        if (callCount === 1) {
+          throw new Error('Network error');
+        }
+        return new Blob([new Uint8Array([1, 2, 3])], { type: 'video/mp4' });
+      }),
+    });
+    const decoder = createMediaDecoder(resolver);
+
+    // First attempt should fail
+    await expect(decoder.decodeVideoFrame('asset-fail', 0, 1920, 1080)).rejects.toThrow('Network error');
+
+    // Second attempt should succeed (not return the cached rejection)
+    const result = await decoder.decodeVideoFrame('asset-fail', 0, 1920, 1080);
+    expect(result).toBe(mockCanvas);
+    expect(resolver.fetchBlob).toHaveBeenCalledTimes(2);
+  });
+
   it('handles concurrent requests for the same asset without duplicate fetchBlob calls', async () => {
     const resolver = createMockResolver();
     const decoder = createMediaDecoder(resolver);

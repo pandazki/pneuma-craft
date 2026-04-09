@@ -28,6 +28,11 @@ export function createMediaDecoder(resolver: AssetResolver): MediaDecoder {
       return asset;
     })();
 
+    // Remove from initPromises on failure so future attempts can retry
+    promise.catch(() => {
+      initPromises.delete(assetId);
+    });
+
     initPromises.set(assetId, promise);
     return promise;
   }

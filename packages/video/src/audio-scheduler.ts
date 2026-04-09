@@ -25,6 +25,16 @@ export function createAudioScheduler(options: AudioSchedulerOptions): AudioSched
   // Currently active sources
   let activeSources: ActiveSource[] = [];
 
+  // Scheduler tick state for future clip scheduling
+  let schedulerIntervalId: ReturnType<typeof setInterval> | null = null;
+  let scheduledClipIds = new Set<string>();
+  let playStartContextTime = 0;
+  let playFromTime = 0;
+  let currentComposition: Composition | null = null;
+
+  // Look-ahead window in seconds
+  const LOOK_AHEAD = 0.2;
+
   // Master gain node connected to destination
   const masterGain = audioContext.createGain();
   masterGain.gain.value = 1;
@@ -41,6 +51,13 @@ export function createAudioScheduler(options: AudioSchedulerOptions): AudioSched
       trackGains.set(track.id, node);
     }
     return node;
+  }
+
+  function clearSchedulerTick(): void {
+    if (schedulerIntervalId !== null) {
+      clearInterval(schedulerIntervalId);
+      schedulerIntervalId = null;
+    }
   }
 
   function stopAllSources(): void {
@@ -110,6 +127,12 @@ export function createAudioScheduler(options: AudioSchedulerOptions): AudioSched
     activeSources.push({ source, clipGain });
   }
 
+  function isClipInLookAhead(clip: Clip, currentTime: number, lookAhead: number): boolean {
+    const clipEnd = clip.startTime + clip.duration;
+    // Clip starts within the look-ahead window and hasn't ended
+    return clip.startTime > currentTime && clip.startTime <= currentTime + lookAhead && clipEnd > currentTime;
+  }
+
   function scheduleComposition(fromTime: number, composition: Composition): void {
     for (const track of composition.tracks) {
       if (track.type !== 'audio') continue;
@@ -117,9 +140,37 @@ export function createAudioScheduler(options: AudioSchedulerOptions): AudioSched
 
       for (const clip of track.clips) {
         if (!isClipActiveAt(clip, fromTime)) continue;
+        if (scheduledClipIds.has(clip.id)) continue;
+        scheduledClipIds.add(clip.id);
         scheduleClip(clip, track, fromTime);
       }
     }
+  }
+
+  function startSchedulerTick(fromTime: number, composition: Composition): void {
+    clearSchedulerTick();
+    playStartContextTime = audioContext.currentTime;
+    playFromTime = fromTime;
+    currentComposition = composition;
+
+    schedulerIntervalId = setInterval(() => {
+      if (!currentComposition) return;
+      const elapsed = audioContext.currentTime - playStartContextTime;
+      const currentTimelineTime = playFromTime + elapsed;
+
+      for (const track of currentComposition.tracks) {
+        if (track.type !== 'audio') continue;
+        if (track.muted) continue;
+
+        for (const clip of track.clips) {
+          if (scheduledClipIds.has(clip.id)) continue;
+          if (isClipInLookAhead(clip, currentTimelineTime, LOOK_AHEAD) || isClipActiveAt(clip, currentTimelineTime)) {
+            scheduledClipIds.add(clip.id);
+            scheduleClip(clip, track, clip.startTime > currentTimelineTime ? clip.startTime : currentTimelineTime);
+          }
+        }
+      }
+    }, 100);
   }
 
   const scheduler: AudioScheduler = {
@@ -133,16 +184,24 @@ export function createAudioScheduler(options: AudioSchedulerOptions): AudioSched
 
     play(fromTime: number, composition: Composition): void {
       stopAllSources();
+      clearSchedulerTick();
+      scheduledClipIds = new Set();
       scheduleComposition(fromTime, composition);
+      startSchedulerTick(fromTime, composition);
     },
 
     pause(): void {
+      clearSchedulerTick();
       stopAllSources();
+      scheduledClipIds = new Set();
     },
 
     seek(time: number, composition: Composition): void {
+      clearSchedulerTick();
       stopAllSources();
+      scheduledClipIds = new Set();
       scheduleComposition(time, composition);
+      startSchedulerTick(time, composition);
     },
 
     setTrackVolume(trackId: string, volume: number): void {
@@ -166,7 +225,10 @@ export function createAudioScheduler(options: AudioSchedulerOptions): AudioSched
     },
 
     destroy(): void {
+      clearSchedulerTick();
       stopAllSources();
+      scheduledClipIds = new Set();
+      currentComposition = null;
       for (const node of trackGains.values()) {
         node.disconnect();
       }

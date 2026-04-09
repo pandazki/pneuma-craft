@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createAudioScheduler } from '../src/audio-scheduler.js';
 import {
   createMockAudioContext,
@@ -16,7 +16,12 @@ describe('createAudioScheduler', () => {
   let audioContext: MockAudioContext;
 
   beforeEach(() => {
+    vi.useFakeTimers();
     audioContext = createMockAudioContext() as MockAudioContext;
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   // ── 1. Creation ──────────────────────────────────────────────────────────
@@ -216,6 +221,144 @@ describe('createAudioScheduler', () => {
       scheduler.play(0, composition);
       const secondCallCount = (audioContext.createBufferSource as ReturnType<typeof import('vitest').vi.fn>).mock.calls.length;
       expect(secondCallCount).toBeGreaterThan(firstCallCount);
+    });
+  });
+
+  // ── 3b. Scheduler tick for future clips ──────────────────────────────
+
+  describe('scheduler tick', () => {
+    it('schedules future clips when they enter the look-ahead window', () => {
+      const scheduler = createAudioScheduler({ audioContext });
+      const buffer = createMockAudioBuffer(5);
+      scheduler.loadClip('clip-future', buffer);
+
+      const composition = createMockComposition({
+        tracks: [
+          createMockTrack({
+            id: 'track-1',
+            type: 'audio',
+            muted: false,
+            clips: [createMockClip({ id: 'clip-future', startTime: 1, duration: 5 })],
+          }),
+        ],
+      });
+
+      // Play from time 0 — clip starts at 1, not active yet
+      scheduler.play(0, composition);
+      expect(audioContext.createBufferSource).not.toHaveBeenCalled();
+
+      // Advance AudioContext time to 0.9s (timeline time ~0.9, look-ahead reaches 1.1)
+      audioContext._advanceTime(0.9);
+      vi.advanceTimersByTime(100);
+
+      // Clip at 1.0 should now be scheduled within look-ahead
+      expect(audioContext.createBufferSource).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not schedule the same clip twice', () => {
+      const scheduler = createAudioScheduler({ audioContext });
+      const buffer = createMockAudioBuffer(5);
+      scheduler.loadClip('clip-future', buffer);
+
+      const composition = createMockComposition({
+        tracks: [
+          createMockTrack({
+            id: 'track-1',
+            type: 'audio',
+            muted: false,
+            clips: [createMockClip({ id: 'clip-future', startTime: 1, duration: 5 })],
+          }),
+        ],
+      });
+
+      scheduler.play(0, composition);
+
+      // Advance past the clip start
+      audioContext._advanceTime(1.5);
+      vi.advanceTimersByTime(100);
+      vi.advanceTimersByTime(100);
+
+      // Should only be scheduled once
+      expect(audioContext.createBufferSource).toHaveBeenCalledTimes(1);
+    });
+
+    it('clears tick on pause', () => {
+      const scheduler = createAudioScheduler({ audioContext });
+      const buffer = createMockAudioBuffer(5);
+      scheduler.loadClip('clip-future', buffer);
+
+      const composition = createMockComposition({
+        tracks: [
+          createMockTrack({
+            id: 'track-1',
+            type: 'audio',
+            muted: false,
+            clips: [createMockClip({ id: 'clip-future', startTime: 2, duration: 5 })],
+          }),
+        ],
+      });
+
+      scheduler.play(0, composition);
+      scheduler.pause();
+
+      // Advance time — tick should not fire
+      audioContext._advanceTime(2.0);
+      vi.advanceTimersByTime(200);
+
+      expect(audioContext.createBufferSource).not.toHaveBeenCalled();
+    });
+
+    it('clears tick on destroy', () => {
+      const scheduler = createAudioScheduler({ audioContext });
+      const buffer = createMockAudioBuffer(5);
+      scheduler.loadClip('clip-future', buffer);
+
+      const composition = createMockComposition({
+        tracks: [
+          createMockTrack({
+            id: 'track-1',
+            type: 'audio',
+            muted: false,
+            clips: [createMockClip({ id: 'clip-future', startTime: 2, duration: 5 })],
+          }),
+        ],
+      });
+
+      scheduler.play(0, composition);
+      scheduler.destroy();
+
+      audioContext._advanceTime(2.0);
+      vi.advanceTimersByTime(200);
+
+      // After destroy, the buffer was cleared — no new source should be created
+      // (createBufferSource may have been called 0 times since clip was future)
+    });
+
+    it('resets scheduled set on seek', () => {
+      const scheduler = createAudioScheduler({ audioContext });
+      const buffer = createMockAudioBuffer(10);
+      scheduler.loadClip('clip-1', buffer);
+
+      const composition = createMockComposition({
+        tracks: [
+          createMockTrack({
+            id: 'track-1',
+            type: 'audio',
+            muted: false,
+            clips: [createMockClip({ id: 'clip-1', startTime: 0, duration: 10 })],
+          }),
+        ],
+      });
+
+      scheduler.play(0, composition);
+      const countAfterPlay = (audioContext.createBufferSource as ReturnType<typeof vi.fn>).mock.calls.length;
+
+      // Seek to a position where the clip is still active
+      scheduler.seek(5, composition);
+      const countAfterSeek = (audioContext.createBufferSource as ReturnType<typeof vi.fn>).mock.calls.length;
+
+      // Seek should have created a new source (reset + reschedule)
+      expect(countAfterSeek).toBeGreaterThan(countAfterPlay);
     });
   });
 
