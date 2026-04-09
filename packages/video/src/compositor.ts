@@ -14,7 +14,7 @@ export async function createCompositor(
   }
 
   if (type === 'gpu' || type === 'auto') {
-    if (typeof navigator !== 'undefined' && navigator.gpu) {
+    if (typeof navigator !== 'undefined' && (navigator as unknown as { gpu?: unknown }).gpu) {
       try {
         return await createGPUCompositor(width, height);
       } catch {

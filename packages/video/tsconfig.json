@@ -2,8 +2,9 @@
   "extends": "../../tsconfig.json",
   "compilerOptions": {
     "outDir": "dist",
-    "rootDir": "src"
+    "rootDir": "src",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["@webgpu/types"]
   },
-  "include": ["src"],
-  "references": [{ "path": "../core" }, { "path": "../timeline" }]
+  "include": ["src"]
 }

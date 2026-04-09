@@ -66,7 +66,7 @@ export function createMediaDecoder(resolver: AssetResolver): MediaDecoder {
       let fps = 0;
       if (videoTrack) {
         const stats = await videoTrack.computePacketStats(100);
-        fps = stats.averageFrameRate;
+        fps = stats.averagePacketRate;
       }
       const info: MediaInfo = {
         duration,
