@@ -51,7 +51,7 @@ export {
 export type { ProvenanceTreeNode } from './provenance-queries.js';
 
 // ── Undo manager ────────────────────────────────────────────────────────
-export { createUndoManager } from './undo-manager.js';
+export { createUndoManager, invertCoreEvent } from './undo-manager.js';
 export type { UndoManager } from './undo-manager.js';
 
 // ── ID generation ───────────────────────────────────────────────────────

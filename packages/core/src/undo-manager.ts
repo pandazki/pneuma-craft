@@ -15,7 +15,7 @@ export interface UndoManager {
   canRedo(): boolean;
 }
 
-function invertEvent(event: Event): Event {
+export function invertCoreEvent(event: Event): Event {
   const e = asCoreEvent(event);
   const base = {
     id: generateId(),
@@ -75,7 +75,10 @@ function invertEvent(event: Event): Event {
   }
 }
 
-export function createUndoManager(): UndoManager {
+export function createUndoManager(
+  invertFn?: (event: Event) => Event,
+): UndoManager {
+  const invert = invertFn ?? invertCoreEvent;
   const undoStack: UndoEntry[] = [];
   const redoStack: UndoEntry[] = [];
 
@@ -87,14 +90,13 @@ export function createUndoManager(): UndoManager {
     undo(): Event[] | null {
       const entry = undoStack.pop();
       if (!entry) return null;
-      const compensating = [...entry.events].reverse().map(invertEvent);
+      const compensating = [...entry.events].reverse().map(invert);
       redoStack.push(entry);
       return compensating;
     },
     redo(): Event[] | null {
       const entry = redoStack.pop();
       if (!entry) return null;
-      // Preserve original timestamps for correct event ordering in audit views
       const reEvents = entry.events.map(e => ({ ...e, id: generateId() }));
       undoStack.push({ commandId: entry.commandId, events: reEvents });
       return reEvents;
