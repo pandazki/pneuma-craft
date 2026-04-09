@@ -74,6 +74,32 @@ interface CompositionState {
 
 Types are already scaffolded in `packages/timeline/src/types.ts`. Key design decisions:
 
+### Same-Track Non-Overlap Invariant
+
+**Clips on the same track must never overlap in time.** This is enforced at the command handler level:
+
+- `add-clip`: after inserting, any subsequent clips on the same track that overlap are **rippled** (pushed forward in time) to make room.
+- `move-clip`: after moving, overlapping clips on the target track are rippled.
+- `split-clip`: produces two adjacent non-overlapping clips by definition.
+- `trim-clip`: may create a gap but never causes overlap.
+
+**Multi-track overlap is allowed** — that's the whole point of having multiple tracks. If you need two video clips playing simultaneously, put them on separate tracks. The compositor layers them by track order.
+
+This applies to all track types equally: video, audio, and subtitle.
+
+### Ripple Behavior
+
+When a clip is inserted or moved and would overlap with subsequent clips on the same track, those clips are pushed forward by the overlap amount. This produces additional `composition:clip-moved` events in the same command.
+
+```
+Before:  |--[==A==]--[==B==]--[==C==]--|
+Insert X at A's position:
+After:   |--[==X==][==A==]--[==B==]--[==C==]--|
+                   ^ A, B, C all shifted right by X.duration
+```
+
+Ripple only affects clips that **start at or after** the insertion point. Clips before the insertion point are untouched.
+
 ### Clip Ordering
 
 Clips within a track are always sorted by `startTime` (ascending). Every operation that adds or moves a clip re-sorts the clips array. This is borrowed from OpenReel Video's pattern — it guarantees stable iteration order for `resolveFrame` and sequential playback.
@@ -126,9 +152,9 @@ localTime = inPoint + (time - startTime)
 | `composition:create` | `composition:created` | `{ composition }` (full initial object) |
 | `composition:add-track` | `composition:track-added` | `{ track }` (with generated id) |
 | `composition:remove-track` | `composition:track-removed` | `{ trackId, track }` (full track for undo) |
-| `composition:add-clip` | `composition:clip-added` | `{ trackId, clip }` (with generated id) |
+| `composition:add-clip` | `composition:clip-added` + `composition:clip-moved`* | `{ trackId, clip }` + ripple moves |
 | `composition:remove-clip` | `composition:clip-removed` | `{ clipId, clip, trackId }` (full clip for undo) |
-| `composition:move-clip` | `composition:clip-moved` | `{ clipId, startTime, trackId?, previousStartTime, previousTrackId }` |
+| `composition:move-clip` | `composition:clip-moved` + `composition:clip-moved`* | `{ clipId, startTime, ... }` + ripple moves |
 | `composition:trim-clip` | `composition:clip-trimmed` | `{ clipId, inPoint, outPoint, duration, previousInPoint, previousOutPoint, previousDuration }` |
 | `composition:split-clip` | `composition:clip-split` | `{ clipId, time, newClipId, leftClip, rightClip }` |
 | `composition:reorder-tracks` | `composition:tracks-reordered` | `{ trackIds, previousTrackIds }` |
@@ -142,9 +168,9 @@ localTime = inPoint + (time - startTime)
 | `composition:create` | No composition exists yet |
 | `composition:add-track` | Composition exists |
 | `composition:remove-track` | Track exists, track has no clips |
-| `composition:add-clip` | Track exists, track not locked, assetId exists in core registry |
+| `composition:add-clip` | Track exists, track not locked, assetId exists in core registry. Ripples overlapping clips on same track. |
 | `composition:remove-clip` | Clip exists, track not locked |
-| `composition:move-clip` | Clip exists, source track not locked, target track (if specified) exists and not locked |
+| `composition:move-clip` | Clip exists, source track not locked, target track (if specified) exists and not locked. Ripples overlapping clips on target track. |
 | `composition:trim-clip` | Clip exists, track not locked |
 | `composition:split-clip` | Clip exists, track not locked, time is within clip range `(startTime, startTime + duration)` |
 | `composition:reorder-tracks` | All trackIds are valid, no duplicates, same count as current tracks |
@@ -347,14 +373,14 @@ Borrowing from OpenReel's test patterns:
 - State projection with typed events
 - resolveFrame (half-open interval)
 - Immutable helpers (sort, duration recompute)
+- Same-track non-overlap invariant with ripple on insert/move
 - Undo via invertCompositionEvent
 - TimelineCore facade
 - Command reference doc
 
 **Out of scope (future):**
 - Transition rendering (structure exists in types, no processing)
-- Clip overlap detection / prevention
 - Snap-to-grid
 - Keyframes / animation
 - Track type enforcement (e.g., no video clip on audio track)
-- Ripple delete / ripple trim
+- Ripple delete / ripple trim (removing a clip and closing the gap)

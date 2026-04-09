@@ -87,4 +87,5 @@ export type CompositionCommand =
   | { type: 'composition:remove-clip'; clipId: string }
   | { type: 'composition:move-clip'; clipId: string; startTime: number; trackId?: string }
   | { type: 'composition:trim-clip'; clipId: string; inPoint?: number; outPoint?: number; duration?: number }
+  | { type: 'composition:split-clip'; clipId: string; time: number }
   | { type: 'composition:reorder-tracks'; trackIds: string[] };
