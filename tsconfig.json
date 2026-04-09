@@ -17,6 +17,7 @@
     { "path": "packages/core" },
     { "path": "packages/timeline" },
     { "path": "packages/video" },
-    { "path": "packages/react" }
+    { "path": "packages/react" },
+    { "path": "packages/react-ui" }
   ]
 }
