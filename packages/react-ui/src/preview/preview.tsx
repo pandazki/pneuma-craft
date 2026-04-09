@@ -1,5 +1,5 @@
 import React, { useCallback } from 'react';
-import { PreviewRoot, usePlayback } from '@pneuma-craft/react';
+import { PreviewRoot, usePlayback, useComposition } from '@pneuma-craft/react';
 import { IconButton } from '../atoms/index.js';
 import './preview.css';
 
@@ -49,19 +49,29 @@ function PreviewControls() {
   );
 }
 
+function PreviewCanvas() {
+  const composition = useComposition();
+  const width = composition?.width ?? 1920;
+  const height = composition?.height ?? 1080;
+
+  return (
+    <PreviewRoot>
+      {({ canvasRef, isLoading }) => (
+        <div className="pc-preview-canvas-container" style={{ aspectRatio: `${width}/${height}` }}>
+          <canvas ref={canvasRef} width={width} height={height} />
+          {isLoading && (
+            <div className="pc-preview-loading">Loading...</div>
+          )}
+        </div>
+      )}
+    </PreviewRoot>
+  );
+}
+
 export function Preview({ className, style }: PreviewProps) {
   return (
     <div className={`pc-preview ${className ?? ''}`} style={style}>
-      <PreviewRoot>
-        {({ canvasRef, isLoading }) => (
-          <div className="pc-preview-canvas-container">
-            <canvas ref={canvasRef} />
-            {isLoading && (
-              <div className="pc-preview-loading">Loading...</div>
-            )}
-          </div>
-        )}
-      </PreviewRoot>
+      <PreviewCanvas />
       <PreviewControls />
     </div>
   );

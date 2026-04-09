@@ -33,7 +33,7 @@ function CompoundToolbar() {
 
 function CompoundTrackList() {
   const state = useTimelineContext();
-  return <TimelineTrackList tracks={state.tracks} timeToPixels={state.timeToPixels} />;
+  return <TimelineTrackList tracks={state.tracks} duration={state.duration} timeToPixels={state.timeToPixels} />;
 }
 
 function CompoundPlayhead() {
