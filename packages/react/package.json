@@ -24,15 +24,18 @@
   "dependencies": {
     "@pneuma-craft/core": "workspace:*",
     "@pneuma-craft/timeline": "workspace:*",
-    "@pneuma-craft/video": "workspace:*"
+    "@pneuma-craft/video": "workspace:*",
+    "zustand": "^5.0.0"
   },
   "peerDependencies": {
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@testing-library/react": "^16.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "jsdom": "^26.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "tsup": "^8.4.0",

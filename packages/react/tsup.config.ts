@@ -9,6 +9,8 @@ export default defineConfig({
   external: [
     'react',
     'react-dom',
+    'zustand',
+    'zustand/vanilla',
     '@pneuma-craft/core',
     '@pneuma-craft/timeline',
     '@pneuma-craft/video',
