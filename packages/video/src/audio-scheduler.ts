@@ -36,6 +36,9 @@ export function createAudioScheduler(options: AudioSchedulerOptions): AudioSched
   // Playback rate (applied to elapsed time and source nodes)
   let _playbackRate = 1;
 
+  // Whether playback is currently active
+  let _isPlaying = false;
+
   // Previous timeline time for loop-wrap detection
   let _prevTimelineTime = 0;
 
@@ -54,8 +57,10 @@ export function createAudioScheduler(options: AudioSchedulerOptions): AudioSched
     let node = trackGains.get(track.id);
     if (!node) {
       node = audioContext.createGain();
-      const vol = track.volume ?? 1;
-      node.gain.value = track.muted ? 0 : vol;
+      // Use runtime overrides if they exist, otherwise fall back to composition data
+      const vol = trackVolumes.get(track.id) ?? track.volume ?? 1;
+      const muted = trackMutedStates.get(track.id) ?? track.muted;
+      node.gain.value = muted ? 0 : vol;
       trackVolumes.set(track.id, vol);
       node.connect(masterGain);
       trackGains.set(track.id, node);
@@ -249,6 +254,8 @@ export function createAudioScheduler(options: AudioSchedulerOptions): AudioSched
       scheduledClipIds = new Set();
       _prevTimelineTime = fromTime;
       _getCurrentTime = getCurrentTime ?? null;
+      _isPlaying = true;
+      currentComposition = composition;
       scheduleComposition(fromTime, composition);
       startSchedulerTick(fromTime, composition);
     },
@@ -257,6 +264,7 @@ export function createAudioScheduler(options: AudioSchedulerOptions): AudioSched
       clearSchedulerTick();
       stopAllSources();
       scheduledClipIds = new Set();
+      _isPlaying = false;
     },
 
     seek(time: number, composition: Composition): void {
@@ -270,8 +278,20 @@ export function createAudioScheduler(options: AudioSchedulerOptions): AudioSched
 
     setPlaybackRate(rate: number): void {
       _playbackRate = rate;
-      for (const scheduled of activeSources) {
-        scheduled.source.playbackRate.value = rate;
+      // If playing, reschedule everything with new rate so future clip
+      // contextStartTime values are recalculated correctly.
+      if (_isPlaying && currentComposition && _getCurrentTime) {
+        stopAllSources();
+        scheduledClipIds = new Set();
+        const currentTime = _getCurrentTime();
+        scheduleComposition(currentTime, currentComposition);
+        clearSchedulerTick();
+        startSchedulerTick(currentTime, currentComposition);
+      } else {
+        // Not playing or no getCurrentTime — just update active sources
+        for (const scheduled of activeSources) {
+          scheduled.source.playbackRate.value = rate;
+        }
       }
     },
 
@@ -305,6 +325,7 @@ export function createAudioScheduler(options: AudioSchedulerOptions): AudioSched
       stopAllSources();
       scheduledClipIds = new Set();
       currentComposition = null;
+      _isPlaying = false;
       for (const node of trackGains.values()) {
         node.disconnect();
       }

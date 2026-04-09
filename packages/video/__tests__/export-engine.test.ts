@@ -237,6 +237,43 @@ describe('createExportEngine', () => {
     await expect(exportPromise).rejects.toThrow(/abort/i);
   });
 
+  // ── 4b. Abort during audio render ───────────────────────────────────────────
+
+  it('abort during audio rendering still cancels export', async () => {
+    const engine = createExportEngine();
+
+    // Make audio render slow so abort happens during it
+    mockOfflineAudioRenderer.render = vi.fn().mockImplementation(async () => {
+      await new Promise(r => setTimeout(r, 100));
+      return mockAudioBuffer;
+    });
+
+    const composition = createMockComposition({
+      duration: 0.03, // 1 frame at 30fps — video finishes quickly
+      settings: {
+        width: 640,
+        height: 480,
+        fps: 30,
+        aspectRatio: '4:3',
+        sampleRate: 48000,
+      },
+    });
+    const resolver = createMockAssetResolver();
+
+    const exportPromise = engine.export(composition, {
+      format: 'mp4',
+      videoCodec: 'avc',
+      audioCodec: 'aac',
+      videoBitrate: 5_000_000,
+      audioBitrate: 128_000,
+    }, resolver);
+
+    // Abort after video frames complete but during audio render
+    setTimeout(() => engine.abort(), 20);
+
+    await expect(exportPromise).rejects.toThrow(/abort/i);
+  });
+
   // ── 5. Uses WebM format when specified ──────────────────────────────────────
 
   it('uses WebMOutputFormat when format is webm', async () => {

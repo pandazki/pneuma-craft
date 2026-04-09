@@ -561,6 +561,103 @@ describe('createAudioScheduler', () => {
       expect(() => scheduler.setTrackVolume('track-1', 0.5)).not.toThrow();
     });
 
+    it('uses runtime volume override when track gain is created later', () => {
+      // Use a fresh audio context with independent gain nodes
+      const ctx = createMockAudioContext() as MockAudioContext;
+      // Patch createGain to return independent gain objects
+      const gainNodes: Array<{ gain: { value: number; setValueAtTime: ReturnType<typeof vi.fn>; linearRampToValueAtTime: ReturnType<typeof vi.fn> }; connect: ReturnType<typeof vi.fn>; disconnect: ReturnType<typeof vi.fn> }> = [];
+      (ctx as any).createGain = vi.fn(() => {
+        const node = {
+          gain: { value: 1, setValueAtTime: vi.fn(), linearRampToValueAtTime: vi.fn() },
+          connect: vi.fn().mockReturnThis(),
+          disconnect: vi.fn(),
+        };
+        gainNodes.push(node);
+        return node;
+      });
+      (ctx as any).createBufferSource = vi.fn(() => ({
+        buffer: null,
+        playbackRate: { value: 1 },
+        connect: vi.fn().mockReturnThis(),
+        disconnect: vi.fn(),
+        start: vi.fn(),
+        stop: vi.fn(),
+        onended: null,
+      }));
+
+      const scheduler = createAudioScheduler({ audioContext: ctx });
+      const buffer = createMockAudioBuffer();
+      scheduler.loadClip('clip-1', buffer);
+
+      // Set volume BEFORE playback — no track gain node exists yet
+      scheduler.setTrackVolume('track-1', 0.3);
+
+      const composition = createMockComposition({
+        tracks: [
+          createMockTrack({
+            id: 'track-1',
+            type: 'audio',
+            muted: false,
+            volume: 0.8, // composition says 0.8
+            clips: [createMockClip({ id: 'clip-1', startTime: 0, duration: 5 })],
+          }),
+        ],
+      });
+
+      scheduler.play(0, composition);
+
+      // gainNodes: [0]=master, [1]=track, [2]=clip
+      // Track gain node should use the runtime override 0.3, not composition 0.8
+      expect(gainNodes[1].gain.value).toBe(0.3);
+    });
+
+    it('uses runtime mute override when track gain is created later', () => {
+      const ctx = createMockAudioContext() as MockAudioContext;
+      const gainNodes: Array<{ gain: { value: number; setValueAtTime: ReturnType<typeof vi.fn>; linearRampToValueAtTime: ReturnType<typeof vi.fn> }; connect: ReturnType<typeof vi.fn>; disconnect: ReturnType<typeof vi.fn> }> = [];
+      (ctx as any).createGain = vi.fn(() => {
+        const node = {
+          gain: { value: 1, setValueAtTime: vi.fn(), linearRampToValueAtTime: vi.fn() },
+          connect: vi.fn().mockReturnThis(),
+          disconnect: vi.fn(),
+        };
+        gainNodes.push(node);
+        return node;
+      });
+      (ctx as any).createBufferSource = vi.fn(() => ({
+        buffer: null,
+        playbackRate: { value: 1 },
+        connect: vi.fn().mockReturnThis(),
+        disconnect: vi.fn(),
+        start: vi.fn(),
+        stop: vi.fn(),
+        onended: null,
+      }));
+
+      const scheduler = createAudioScheduler({ audioContext: ctx });
+      const buffer = createMockAudioBuffer();
+      scheduler.loadClip('clip-1', buffer);
+
+      // Mute BEFORE playback
+      scheduler.setTrackMute('track-1', true);
+
+      const composition = createMockComposition({
+        tracks: [
+          createMockTrack({
+            id: 'track-1',
+            type: 'audio',
+            muted: false, // composition says not muted
+            volume: 0.8,
+            clips: [createMockClip({ id: 'clip-1', startTime: 0, duration: 5 })],
+          }),
+        ],
+      });
+
+      scheduler.play(0, composition);
+
+      // Track gain node should be muted (gain = 0) from runtime override
+      expect(gainNodes[1].gain.value).toBe(0);
+    });
+
     it('creates gain node for unknown track if needed', () => {
       const scheduler = createAudioScheduler({ audioContext });
       // Should not throw even for a track that has no clips played yet
@@ -809,6 +906,64 @@ describe('createAudioScheduler', () => {
 
       scheduler.setPlaybackRate(2);
       expect(sourceNode.playbackRate.value).toBe(2);
+    });
+
+    it('reschedules all clips when rate changes during playback with getCurrentTime', () => {
+      const scheduler = createAudioScheduler({ audioContext });
+      const buffer = createMockAudioBuffer(10);
+      scheduler.loadClip('clip-1', buffer);
+      scheduler.loadClip('clip-future', createMockAudioBuffer(5));
+
+      const composition = createMockComposition({
+        tracks: [
+          createMockTrack({
+            id: 'track-1',
+            type: 'audio',
+            muted: false,
+            clips: [
+              createMockClip({ id: 'clip-1', startTime: 0, duration: 10 }),
+              createMockClip({ id: 'clip-future', startTime: 5, duration: 5 }),
+            ],
+          }),
+        ],
+      });
+
+      let mockTime = 2;
+      const getCurrentTime = () => mockTime;
+
+      scheduler.play(0, composition, getCurrentTime);
+      const countAfterPlay = (audioContext.createBufferSource as ReturnType<typeof vi.fn>).mock.calls.length;
+
+      // Change rate — should stop all sources and reschedule from currentTime
+      scheduler.setPlaybackRate(2);
+      const countAfterRate = (audioContext.createBufferSource as ReturnType<typeof vi.fn>).mock.calls.length;
+
+      // Should have created new source(s) for clips active at mockTime=2
+      expect(countAfterRate).toBeGreaterThan(countAfterPlay);
+    });
+
+    it('still updates source nodes directly when no getCurrentTime callback', () => {
+      const scheduler = createAudioScheduler({ audioContext });
+      const buffer = createMockAudioBuffer(10);
+      scheduler.loadClip('clip-1', buffer);
+
+      const composition = createMockComposition({
+        tracks: [
+          createMockTrack({
+            id: 'track-1',
+            type: 'audio',
+            muted: false,
+            clips: [createMockClip({ id: 'clip-1', startTime: 0, duration: 10 })],
+          }),
+        ],
+      });
+
+      // Play without getCurrentTime callback
+      scheduler.play(0, composition);
+      const sourceNode = (audioContext.createBufferSource as ReturnType<typeof vi.fn>).mock.results[0].value;
+
+      scheduler.setPlaybackRate(1.5);
+      expect(sourceNode.playbackRate.value).toBe(1.5);
     });
 
     it('updates playbackRate on multiple active source nodes', () => {

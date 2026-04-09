@@ -90,6 +90,7 @@ export function createExportEngine(): ExportEngine {
         }
 
         videoSource.close();
+        if (signal.aborted) throw new Error('Export aborted');
 
         // Render audio offline
         const offlineRenderer = createOfflineAudioRenderer();
@@ -98,8 +99,11 @@ export function createExportEngine(): ExportEngine {
           resolver,
           (assetId) => decoder.decodeAudio(assetId),
         );
+        if (signal.aborted) throw new Error('Export aborted');
+
         await audioSource.add(audioBuffer);
         audioSource.close();
+        if (signal.aborted) throw new Error('Export aborted');
 
         await output.finalize();
 
