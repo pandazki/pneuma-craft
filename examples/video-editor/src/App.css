@@ -75,14 +75,14 @@ body {
 /* ── Preview ──────────────────────────────────────────────────────────── */
 .editor-preview {
   grid-area: preview;
-  background: var(--pc-bg, #09090b);
+  background: #000;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
 }
 
-.editor-preview .pc-preview {
+.editor-preview .native-preview {
   width: 100%;
   height: 100%;
 }
@@ -96,6 +96,19 @@ body {
 
 .editor-timeline .pc-timeline {
   height: 100%;
+}
+
+/* ── Asset Actions ────────────────────────────────────────────────────── */
+.asset-actions {
+  padding: 8px 12px 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.asset-actions__hint {
+  color: var(--pc-fg-dim, #71717a);
+  font-size: 11px;
+  margin-bottom: 8px;
+  line-height: 1.4;
 }
 
 /* ── Utility ──────────────────────────────────────────────────────────── */
