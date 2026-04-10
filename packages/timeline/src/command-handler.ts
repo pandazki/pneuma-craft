@@ -7,7 +7,7 @@ import { findClipById } from './composition-helpers.js';
 /**
  * Generate ripple move events for clips on the same track that would overlap
  * with a clip placed at [startTime, startTime + duration).
- * Returns move events for all displaced clips.
+ * Returns move events for all displaced clips, pushing them after the placed clip.
  */
 function generateRippleEvents(
   envelope: CommandEnvelope<CompositionCommand>,
@@ -19,35 +19,37 @@ function generateRippleEvents(
   const clipEnd = startTime + duration;
   const events: Event[] = [];
 
-  // Find clips that overlap with [startTime, clipEnd) — sorted by startTime
-  const clipsToRipple = track.clips
-    .filter(c => c.id !== excludeClipId && c.startTime < clipEnd && c.startTime + c.duration > startTime)
+  // Collect all clips except the one being moved, sorted by startTime
+  const others = track.clips
+    .filter(c => c.id !== excludeClipId)
     .sort((a, b) => a.startTime - b.startTime);
 
-  if (clipsToRipple.length === 0) return events;
-
-  // Calculate shift: how much to push the first overlapping clip
-  let shift = clipEnd - clipsToRipple[0].startTime;
-  if (shift <= 0) return events;
-
-  // Also ripple any clips after the overlapping ones that would be displaced
-  // by the chain reaction
-  const allAfter = track.clips
-    .filter(c => c.id !== excludeClipId && c.startTime >= startTime)
-    .sort((a, b) => a.startTime - b.startTime);
-
+  // Walk through clips and push any that overlap with the placed clip or
+  // are displaced by a chain reaction from earlier pushes.
   let nextFreeTime = clipEnd;
-  for (const c of allAfter) {
-    if (c.startTime >= nextFreeTime) break; // no more overlap in the chain
-    const newStart = nextFreeTime;
-    events.push(makeEvent(envelope, 'composition:clip-moved', {
-      clipId: c.id,
-      startTime: newStart,
-      trackId: undefined,
-      previousStartTime: c.startTime,
-      previousTrackId: track.id,
-    }));
-    nextFreeTime = newStart + c.duration;
+  for (const c of others) {
+    const cEnd = c.startTime + c.duration;
+    // Does this clip overlap with the placed region [startTime, clipEnd)?
+    const overlapsPlaced = c.startTime < clipEnd && cEnd > startTime;
+    // Does this clip overlap with the chain-pushed region?
+    const overlapsChain = c.startTime < nextFreeTime && cEnd > startTime;
+
+    if (overlapsPlaced || (overlapsChain && c.startTime < nextFreeTime)) {
+      const newStart = nextFreeTime;
+      if (newStart !== c.startTime) {
+        events.push(makeEvent(envelope, 'composition:clip-moved', {
+          clipId: c.id,
+          startTime: newStart,
+          trackId: undefined,
+          previousStartTime: c.startTime,
+          previousTrackId: track.id,
+        }));
+      }
+      nextFreeTime = newStart + c.duration;
+    } else if (c.startTime >= nextFreeTime) {
+      // No more overlap in the chain, and this clip is past the danger zone
+      break;
+    }
   }
 
   return events;
