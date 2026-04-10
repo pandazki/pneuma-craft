@@ -110,6 +110,22 @@
   opacity: 0.85;
 }
 
+.pc-timeline-clip--dragging {
+  opacity: 0.7;
+  z-index: 20;
+  box-shadow: var(--pc-shadow-lg);
+}
+
+.pc-timeline-snap-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--pc-warning);
+  z-index: 15;
+  pointer-events: none;
+}
+
 .pc-timeline-clip--video {
   background: var(--pc-track-video);
 }

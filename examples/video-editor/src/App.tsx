@@ -28,6 +28,28 @@ function EditorContent() {
   const imageAssets = assets.filter((a) => a.type === 'image');
   const provenanceRootId = selectedRootAssetId ?? imageAssets[0]?.id ?? null;
 
+  const handleClipMove = useCallback(
+    (clipId: string, newStartTime: number) => {
+      dispatch('human', {
+        type: 'composition:move-clip',
+        clipId,
+        startTime: Math.max(0, newStartTime),
+      });
+    },
+    [dispatch],
+  );
+
+  const handleClipSplit = useCallback(
+    (clipId: string, time: number) => {
+      dispatch('human', {
+        type: 'composition:split-clip',
+        clipId,
+        time,
+      });
+    },
+    [dispatch],
+  );
+
   const handleAddClip = useCallback(
     (assetId: string) => {
       if (!composition) return;
@@ -117,7 +139,12 @@ function EditorContent() {
 
       {/* ── Bottom: Timeline ───────────────────────────────── */}
       <section className="editor-timeline">
-        <Timeline defaultPixelsPerSecond={60} onSeek={seek} />
+        <Timeline
+          defaultPixelsPerSecond={60}
+          onSeek={seek}
+          onClipMove={handleClipMove}
+          onClipSplit={handleClipSplit}
+        />
       </section>
     </div>
   );

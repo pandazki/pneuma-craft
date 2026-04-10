@@ -10,6 +10,8 @@ interface TimelineContextValue extends TimelineState {
   pixelsPerSecond: number;
   setPixelsPerSecond: (v: number) => void;
   onSeek?: (time: number) => void;
+  onClipMove?: (clipId: string, newStartTime: number) => void;
+  onClipSplit?: (clipId: string, time: number) => void;
 }
 
 const TimelineContext = createContext<TimelineContextValue | null>(null);
@@ -25,6 +27,8 @@ export interface TimelineProps {
   style?: React.CSSProperties;
   defaultPixelsPerSecond?: number;
   onSeek?: (time: number) => void;
+  onClipMove?: (clipId: string, newStartTime: number) => void;
+  onClipSplit?: (clipId: string, time: number) => void;
   children?: React.ReactNode;
 }
 
@@ -35,7 +39,16 @@ function CompoundToolbar() {
 
 function CompoundTrackList() {
   const state = useTimelineContext();
-  return <TimelineTrackList tracks={state.tracks} duration={state.duration} timeToPixels={state.timeToPixels} />;
+  return (
+    <TimelineTrackList
+      tracks={state.tracks}
+      duration={state.duration}
+      timeToPixels={state.timeToPixels}
+      pixelsToTime={state.pixelsToTime}
+      onClipMove={state.onClipMove}
+      onClipSplit={state.onClipSplit}
+    />
+  );
 }
 
 function CompoundPlayhead() {
@@ -69,6 +82,8 @@ function TimelineBase({
   style,
   defaultPixelsPerSecond = 100,
   onSeek,
+  onClipMove,
+  onClipSplit,
   children,
 }: TimelineProps) {
   const [pixelsPerSecond, setPixelsPerSecond] = useState(defaultPixelsPerSecond);
@@ -76,7 +91,7 @@ function TimelineBase({
   return (
     <HeadlessTimeline pixelsPerSecond={pixelsPerSecond}>
       {(state) => (
-        <TimelineContext.Provider value={{ ...state, pixelsPerSecond, setPixelsPerSecond, onSeek }}>
+        <TimelineContext.Provider value={{ ...state, pixelsPerSecond, setPixelsPerSecond, onSeek, onClipMove, onClipSplit }}>
           <div className={`pc-timeline ${className ?? ''}`} style={style}>
             {children ?? (
               <>
