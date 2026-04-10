@@ -103,16 +103,22 @@ export function NativePreview() {
       currentTimeRef.current = time;
       setCurrentTime(time);
 
-      const video = videoRef.current;
       const comp = compositionRef.current;
-      if (!video || !comp) return;
+      if (!comp) return;
 
-      const { clip, url } = applyTimeToVideo(
-        video, comp, time, activeClipRef.current, playingRef.current,
-      );
+      const clip = findClipAtTime(comp, time);
+      const url = clip ? assetResolver.resolveUrl(clip.assetId) : '';
+
+      // Always update state (so the video element gets rendered)
       activeClipRef.current = clip;
       setActiveClip(clip);
       setActiveUrl(url);
+
+      // Update video element if it exists
+      const video = videoRef.current;
+      if (video && clip) {
+        applyTimeToVideo(video, comp, time, activeClipRef.current, playingRef.current);
+      }
     },
     [],
   );
@@ -207,6 +213,15 @@ export function NativePreview() {
     },
     [seekTo],
   );
+
+  // When video element mounts (activeUrl goes from '' → url), set its src
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !activeClipRef.current) return;
+    const comp = compositionRef.current;
+    if (!comp) return;
+    applyTimeToVideo(video, comp, currentTimeRef.current, null, playingRef.current);
+  }, [activeUrl]);
 
   // Cleanup
   useEffect(() => () => cancelAnimationFrame(rafRef.current), []);
