@@ -1,6 +1,10 @@
 # pneuma-craft
 
-Domain infrastructure for human-AI collaborative content creation.
+**Domain infrastructure for human-AI collaborative content creation.**
+
+<pre>bun add @pneuma-craft/core @pneuma-craft/timeline @pneuma-craft/video @pneuma-craft/react @pneuma-craft/react-ui</pre>
+
+---
 
 ## Background
 
@@ -70,41 +74,43 @@ Command → CommandHandler → Event(s) → EventStore → State (projection)
 @pneuma-craft/core       Domain model, asset registry, provenance graph, event system
 @pneuma-craft/timeline   Composition model — tracks, clips, time-based arrangement
 @pneuma-craft/video      Video engine — decode, composite, preview, export
-@pneuma-craft/react      React 19 bindings — components, hooks, providers
+@pneuma-craft/react      React 19 bindings — headless components, hooks, providers
 @pneuma-craft/react-ui   Styled UI components — Preview, Timeline, AssetLibrary, ProvenanceTree
 ```
 
 Dependency direction:
 
 ```
-react → video → timeline → core
-                    ↓
-              mediabunny (external, video I/O)
+react-ui → react → video → timeline → core
+                       ↓
+                 mediabunny (external, video I/O)
 ```
 
 **core**, **timeline**, and **video** are pure TypeScript — no React, no DOM assumptions (except video which needs Canvas/WebCodecs). They can run in Workers, Node.js, or any framework.
+
+## Status
+
+| Package | Tests | Review Rounds | Description |
+|---------|-------|---------------|-------------|
+| `@pneuma-craft/core` | 86 | 6 | Event store, command handler, state projection, provenance graph, undo/redo |
+| `@pneuma-craft/timeline` | 72 | 6 | Composition model, clip resolution, commands, undo, TimelineCore facade |
+| `@pneuma-craft/video` | 186 | 6 | Video engine — decode, composite, preview, export |
+| `@pneuma-craft/react` | 62 | 6 | Headless React 19 bindings — Provider, hooks, headless components |
+| `@pneuma-craft/react-ui` | 26 | 5 | Styled components — Preview, Timeline, AssetLibrary, ProvenanceTree |
+
+See each package's `docs/` directory for detailed API documentation.
 
 ## Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
-| Runtime | Bun |
+| Runtime | [Bun](https://bun.sh) >= 1.3.5 |
 | Monorepo | Bun workspaces + Turborepo |
 | Build | tsup (ESM + CJS + .d.ts) |
 | Language | TypeScript 5.7+ strict, ESM-first |
 | Testing | Vitest |
 | Video I/O | [MediaBunny](https://mediabunny.dev) (WebCodecs-based) |
-| React | React 19 (only in @pneuma-craft/react) |
-
-## Status
-
-| Package | Status | Description |
-|---------|--------|-------------|
-| `@pneuma-craft/core` | **Implemented** | Event store, command handler, state projection, provenance graph, undo/redo |
-| `@pneuma-craft/timeline` | **Implemented** | Composition model, clip resolution, commands, undo, TimelineCore facade |
-| `@pneuma-craft/video` | **Implemented** | Video engine — decode, composite, preview, export |
-| `@pneuma-craft/react` | **Implemented** | Headless React 19 bindings — Provider, hooks, headless components |
-| `@pneuma-craft/react-ui` | **Implemented** | Styled components — Preview, Timeline, AssetLibrary, ProvenanceTree |
+| React | React 19 (only in @pneuma-craft/react and @pneuma-craft/react-ui) |
 
 ## Getting Started
 
@@ -114,7 +120,18 @@ bun run build
 bun run test
 ```
 
-### Quick Example
+### Running the Example
+
+The repository includes a standalone video editor demo built with `@pneuma-craft/react-ui`:
+
+```bash
+cd examples/video-editor
+bun run dev
+```
+
+This launches a Vite dev server with an interactive editor featuring Preview, Timeline, AssetLibrary, and ProvenanceTree panels.
+
+### Quick Example (Core)
 
 ```typescript
 import { createCore } from '@pneuma-craft/core';
@@ -156,6 +173,69 @@ core.undo();
 const state = core.getState();
 console.log(state.registry.size); // 2 assets
 ```
+
+### Quick Example (React)
+
+```tsx
+import { PneumaCraftProvider } from '@pneuma-craft/react';
+import { Preview, Timeline, AssetLibrary, Panel } from '@pneuma-craft/react-ui';
+import '@pneuma-craft/react-ui/dist/index.css';
+
+const resolver = {
+  resolveUrl: (id: string) => `/api/assets/${id}`,
+  fetchBlob: (id: string) => fetch(`/api/assets/${id}`).then(r => r.blob()),
+};
+
+function App() {
+  return (
+    <PneumaCraftProvider assetResolver={resolver}>
+      <div style={{ display: 'flex', height: '100vh' }}>
+        <Panel title="Assets">
+          <AssetLibrary />
+        </Panel>
+        <Preview />
+      </div>
+      <Timeline
+        onClipMove={(id, time) => { /* handle move */ }}
+        onClipSplit={(id, time) => { /* handle split */ }}
+      />
+    </PneumaCraftProvider>
+  );
+}
+```
+
+## Development
+
+```bash
+bun install              # Install all dependencies
+bun run build            # Build all packages (via turborepo)
+bun run dev              # Watch mode for all packages
+bun run test             # Run all tests
+bun run typecheck        # TypeScript type checking
+```
+
+### Project Structure
+
+```
+pneuma-craft/
+├── packages/
+│   ├── core/           # Asset registry, provenance, events, state
+│   ├── timeline/       # Composition model, clip resolution, clock
+│   ├── video/          # Video engine (MediaBunny-based)
+│   ├── react/          # React headless components and hooks
+│   └── react-ui/       # Styled UI components
+├── examples/
+│   └── video-editor/   # Standalone demo app (Vite 7)
+├── docs/
+│   └── specs/          # Design specs
+├── package.json        # Root workspace config
+├── turbo.json          # Turborepo config
+└── CLAUDE.md           # AI assistant instructions
+```
+
+## Sibling Project
+
+pneuma-craft is extracted from and consumed by [pneuma-skills](https://github.com/pandazki/pneuma-skills) — co-creation infrastructure for humans and code agents. pneuma-skills provides modes (webcraft, slide, clipcraft, etc.), an agent runtime, and a visual workspace. pneuma-craft provides the domain model + viewer components as npm libraries.
 
 ## License
 
