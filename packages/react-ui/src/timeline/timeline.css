@@ -16,6 +16,22 @@
   border-bottom: 1px solid var(--pc-border);
 }
 
+.pc-timeline-toolbar button {
+  padding: var(--pc-space-1) var(--pc-space-3);
+  border-radius: var(--pc-radius-sm);
+  font-size: var(--pc-font-size-xs);
+  color: var(--pc-fg-muted);
+  background: var(--pc-surface-active);
+  border: none;
+  cursor: pointer;
+  transition: background var(--pc-transition), color var(--pc-transition);
+}
+
+.pc-timeline-toolbar button:hover {
+  background: var(--pc-primary-muted);
+  color: var(--pc-primary);
+}
+
 .pc-timeline-duration {
   font-family: var(--pc-font-mono);
   font-size: var(--pc-font-size-xs);

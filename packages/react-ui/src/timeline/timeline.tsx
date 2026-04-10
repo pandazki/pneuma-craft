@@ -15,6 +15,7 @@ interface TimelineContextValue extends TimelineState {
   onClipSelect?: (clipId: string) => void;
   onAssetDrop?: (assetId: string, time: number) => void;
   onClipDragStart?: () => void;
+  toolbarExtra?: React.ReactNode;
   selectedClipIds?: string[];
 }
 
@@ -36,13 +37,14 @@ export interface TimelineProps {
   onClipSelect?: (clipId: string) => void;
   onAssetDrop?: (assetId: string, time: number) => void;
   onClipDragStart?: () => void;
+  toolbarExtra?: React.ReactNode;
   selectedClipIds?: string[];
   children?: React.ReactNode;
 }
 
 function CompoundToolbar() {
-  const { duration, pixelsPerSecond, setPixelsPerSecond } = useTimelineContext();
-  return <TimelineToolbar duration={duration} pixelsPerSecond={pixelsPerSecond} onZoomChange={setPixelsPerSecond} />;
+  const { duration, pixelsPerSecond, setPixelsPerSecond, toolbarExtra } = useTimelineContext();
+  return <TimelineToolbar duration={duration} pixelsPerSecond={pixelsPerSecond} onZoomChange={setPixelsPerSecond} extraActions={toolbarExtra} />;
 }
 
 function CompoundTrackList() {
@@ -151,6 +153,7 @@ function TimelineBase({
   onClipSelect,
   onAssetDrop,
   onClipDragStart,
+  toolbarExtra,
   selectedClipIds,
   children,
 }: TimelineProps) {
@@ -159,7 +162,7 @@ function TimelineBase({
   return (
     <HeadlessTimeline pixelsPerSecond={pixelsPerSecond}>
       {(state) => (
-        <TimelineContext.Provider value={{ ...state, pixelsPerSecond, setPixelsPerSecond, onSeek, onClipMove, onClipSplit, onClipSelect, onAssetDrop, onClipDragStart, selectedClipIds }}>
+        <TimelineContext.Provider value={{ ...state, pixelsPerSecond, setPixelsPerSecond, onSeek, onClipMove, onClipSplit, onClipSelect, onAssetDrop, onClipDragStart, toolbarExtra, selectedClipIds }}>
           <div className={`pc-timeline ${className ?? ''}`} style={style}>
             {children ?? (
               <>

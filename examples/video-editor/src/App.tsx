@@ -177,6 +177,24 @@ function EditorContent() {
     [addClipAtTime],
   );
 
+  const handleCompact = useCallback(() => {
+    if (!composition) return;
+    for (const track of composition.tracks) {
+      const sorted = [...track.clips].sort((a, b) => a.startTime - b.startTime);
+      let nextStart = 0;
+      for (const clip of sorted) {
+        if (clip.startTime !== nextStart) {
+          dispatch('human', {
+            type: 'composition:move-clip',
+            clipId: clip.id,
+            startTime: nextStart,
+          });
+        }
+        nextStart += clip.duration;
+      }
+    }
+  }, [composition, dispatch]);
+
   return (
     <div className="editor-layout">
       {/* ── Header ──────────────────────────────────────────── */}
@@ -234,6 +252,11 @@ function EditorContent() {
           onClipSelect={handleClipSelect}
           onAssetDrop={handleAssetDrop}
           onClipDragStart={pauseForEdit}
+          toolbarExtra={
+            <button className="pc-compact-btn" onClick={handleCompact} title="Compact — remove gaps between clips">
+              Compact
+            </button>
+          }
           selectedClipIds={selectedClipIds}
         />
       </section>

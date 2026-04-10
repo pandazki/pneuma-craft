@@ -4,9 +4,10 @@ export interface TimelineToolbarProps {
   duration: number;
   pixelsPerSecond: number;
   onZoomChange: (pps: number) => void;
+  extraActions?: React.ReactNode;
 }
 
-export function TimelineToolbar({ duration, pixelsPerSecond, onZoomChange }: TimelineToolbarProps) {
+export function TimelineToolbar({ duration, pixelsPerSecond, onZoomChange, extraActions }: TimelineToolbarProps) {
   const handleZoom = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => onZoomChange(parseInt(e.target.value)),
     [onZoomChange],
@@ -27,6 +28,7 @@ export function TimelineToolbar({ duration, pixelsPerSecond, onZoomChange }: Tim
         onChange={handleZoom}
         aria-label="Zoom"
       />
+      {extraActions}
     </div>
   );
 }
