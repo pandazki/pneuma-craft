@@ -14,7 +14,13 @@ export function AssetLibraryItem({ asset, selected, onSelect }: AssetLibraryItem
       onClick={() => onSelect(asset.id)}
     >
       <div className="pc-asset-item-thumbnail">
-        {asset.type.toUpperCase()}
+        {asset.type === 'image' && asset.uri ? (
+          <img src={asset.uri} alt={asset.name} className="pc-asset-item-img" />
+        ) : asset.type === 'video' && asset.uri ? (
+          <video src={asset.uri} className="pc-asset-item-img" muted preload="metadata" />
+        ) : (
+          asset.type.toUpperCase()
+        )}
       </div>
       <span className="pc-asset-item-name" title={asset.name}>{asset.name}</span>
       <span className="pc-asset-item-badge">{asset.type}</span>

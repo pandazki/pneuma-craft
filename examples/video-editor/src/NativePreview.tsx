@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useComposition } from '@pneuma-craft/react';
+import { useComposition, usePlayback } from '@pneuma-craft/react';
 import { assetResolver } from './asset-resolver';
 import './NativePreview.css';
 
@@ -37,6 +37,7 @@ function findClipAtTime(
 
 export function NativePreview() {
   const composition = useComposition();
+  const { seek: storeSeek } = usePlayback();
   const videoRef = useRef<HTMLVideoElement>(null);
   const rafRef = useRef<number>(0);
 
@@ -49,6 +50,8 @@ export function NativePreview() {
   const playingRef = useRef(false);
   const currentTimeRef = useRef(0);
   const lastFrameTimeRef = useRef(0);
+  const storeSeekRef = useRef(storeSeek);
+  storeSeekRef.current = storeSeek;
 
   const totalDuration = composition?.duration ?? 0;
 
@@ -112,14 +115,14 @@ export function NativePreview() {
 
       let nextTime = currentTimeRef.current + delta;
 
-      // Check if we've reached the end
+      // Check if we've reached the end — loop back
       if (nextTime >= totalDuration) {
-        nextTime = 0; // loop
-        // Reset to beginning
+        nextTime = 0;
       }
 
       currentTimeRef.current = nextTime;
       setCurrentTime(nextTime);
+      storeSeekRef.current(nextTime);
 
       // Check if we need to switch clips
       if (composition) {
@@ -164,6 +167,7 @@ export function NativePreview() {
       if (currentTimeRef.current >= totalDuration - 0.1) {
         currentTimeRef.current = 0;
         setCurrentTime(0);
+        storeSeek(0);
         syncClip(0);
       }
 
@@ -184,6 +188,7 @@ export function NativePreview() {
       const time = parseFloat(e.target.value);
       currentTimeRef.current = time;
       setCurrentTime(time);
+      storeSeek(time);
       syncClip(time);
 
       const video = videoRef.current;

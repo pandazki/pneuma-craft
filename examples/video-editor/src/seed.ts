@@ -101,10 +101,14 @@ export function seedDemoData(dispatch: DispatchFn): void {
   const audioTrackId = extractTrackId(audioTrackEvents);
 
   // ── Add clips ──────────────────────────────────────────────────────
-  const durations = [5, 6, 4];
+  const clipDefs = [
+    { duration: 5, videoName: 'Scene 1', audioName: 'Narration 1' },
+    { duration: 6, videoName: 'Scene 2', audioName: 'Narration 2' },
+    { duration: 4, videoName: 'Scene 3', audioName: 'Narration 3' },
+  ];
   let startTime = 0;
   for (let i = 0; i < 3; i++) {
-    const d = durations[i];
+    const { duration: d, videoName, audioName } = clipDefs[i];
     dispatch(actor, {
       type: 'composition:add-clip',
       trackId: videoTrackId,
@@ -114,6 +118,7 @@ export function seedDemoData(dispatch: DispatchFn): void {
         duration: d,
         inPoint: 0,
         outPoint: d,
+        text: videoName,
       },
     });
     dispatch(actor, {
@@ -125,6 +130,7 @@ export function seedDemoData(dispatch: DispatchFn): void {
         duration: d,
         inPoint: 0,
         outPoint: d,
+        text: audioName,
       },
     });
     startTime += d;
