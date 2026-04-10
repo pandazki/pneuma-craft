@@ -299,6 +299,7 @@ export const NativePreview = forwardRef<NativePreviewHandle>(function NativePrev
           max={totalDuration || 1}
           step={0.1}
           value={currentTime}
+          onInput={handleSeek}
           onChange={handleSeek}
         />
 

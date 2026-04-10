@@ -1,4 +1,4 @@
-import React, { useState, useCallback, createContext, useContext } from 'react';
+import React, { useState, useCallback, useRef, createContext, useContext } from 'react';
 import { TimelineRoot as HeadlessTimeline } from '@pneuma-craft/react';
 import type { TimelineState } from '@pneuma-craft/react';
 import { TimelineToolbar } from './timeline-toolbar.js';
@@ -69,16 +69,41 @@ function CompoundPlayhead() {
 
 function CompoundBody({ children }: { children: React.ReactNode }) {
   const { pixelsToTime, onSeek, onAssetDrop } = useTimelineContext();
+  const onSeekRef = useRef(onSeek);
+  onSeekRef.current = onSeek;
+  const pixelsToTimeRef = useRef(pixelsToTime);
+  pixelsToTimeRef.current = pixelsToTime;
 
-  const handleClick = useCallback(
-    (e: React.MouseEvent<HTMLDivElement>) => {
-      if (!onSeek) return;
-      const rect = e.currentTarget.getBoundingClientRect();
-      const x = e.clientX - rect.left + e.currentTarget.scrollLeft - 120;
+  const seekFromEvent = useCallback(
+    (clientX: number, target: HTMLElement) => {
+      const p2t = pixelsToTimeRef.current;
+      const seek = onSeekRef.current;
+      if (!p2t || !seek) return;
+      const rect = target.getBoundingClientRect();
+      const x = clientX - rect.left + target.scrollLeft - 120;
       if (x < 0) return;
-      onSeek(pixelsToTime(x));
+      seek(p2t(x));
     },
-    [pixelsToTime, onSeek],
+    [],
+  );
+
+  // Mousedown → continuous seek on mousemove → mouseup stops
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      if (e.button !== 0 || !onSeek) return;
+      // Don't interfere with clip drag (clips stopPropagation on mousedown)
+      const el = e.currentTarget;
+      seekFromEvent(e.clientX, el);
+
+      const onMove = (ev: MouseEvent) => seekFromEvent(ev.clientX, el);
+      const onUp = () => {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+      };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    },
+    [onSeek, seekFromEvent],
   );
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -93,18 +118,20 @@ function CompoundBody({ children }: { children: React.ReactNode }) {
       e.preventDefault();
       const assetId = e.dataTransfer.getData('application/x-pneuma-asset-id');
       if (!assetId || !onAssetDrop) return;
+      const p2t = pixelsToTimeRef.current;
+      if (!p2t) return;
       const rect = e.currentTarget.getBoundingClientRect();
       const x = e.clientX - rect.left + e.currentTarget.scrollLeft - 120;
-      const time = Math.max(0, pixelsToTime(x));
+      const time = Math.max(0, p2t(x));
       onAssetDrop(assetId, time);
     },
-    [pixelsToTime, onAssetDrop],
+    [onAssetDrop],
   );
 
   return (
     <div
       className="pc-timeline-body"
-      onClick={handleClick}
+      onMouseDown={handleMouseDown}
       onDragOver={handleDragOver}
       onDrop={handleDrop}
       style={{ cursor: onSeek ? 'crosshair' : undefined }}
