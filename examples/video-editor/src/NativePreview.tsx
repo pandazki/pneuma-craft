@@ -52,6 +52,7 @@ export function NativePreview() {
   const lastFrameTimeRef = useRef(0);
   const storeSeekRef = useRef(storeSeek);
   storeSeekRef.current = storeSeek;
+  const activeClipRef = useRef<ClipInfo | null>(null);
 
   const totalDuration = composition?.duration ?? 0;
 
@@ -65,16 +66,24 @@ export function NativePreview() {
     }
   }, [storeCurrentTime]);
 
-  // Sync clip with current time
+  // Sync clip with current time.
+  // Compare by startTime+assetId to detect split clips (same assetId, different startTime).
   const syncClip = useCallback(
     (time: number) => {
       if (!composition) return;
       const clip = findClipAtTime(composition, time);
-      if (clip && clip.assetId !== activeClip?.assetId) {
-        const url = assetResolver.resolveUrl(clip.assetId);
-        setActiveClip(clip);
-        setActiveUrl(url);
-      } else if (!clip && activeClip) {
+      if (clip) {
+        const changed = !activeClip
+          || clip.assetId !== activeClip.assetId
+          || clip.startTime !== activeClip.startTime;
+        if (changed) {
+          const url = assetResolver.resolveUrl(clip.assetId);
+          activeClipRef.current = clip;
+          setActiveClip(clip);
+          setActiveUrl(url);
+        }
+      } else if (activeClip) {
+        activeClipRef.current = null;
         setActiveClip(null);
         setActiveUrl('');
       }
@@ -143,15 +152,24 @@ export function NativePreview() {
           const url = assetResolver.resolveUrl(clip.assetId);
           const fullUrl = new URL(url, window.location.href).href;
 
-          if (video.src !== fullUrl) {
-            // Switching to a new clip
+          // Detect clip change: different URL OR same asset but different clip region (after split)
+          const prevClip = activeClipRef.current;
+          const clipChanged = video.src !== fullUrl
+            || !prevClip
+            || clip.startTime !== prevClip.startTime;
+
+          if (clipChanged) {
+            activeClipRef.current = clip;
             setActiveClip(clip);
             setActiveUrl(url);
-            video.src = url;
+            if (video.src !== fullUrl) {
+              video.src = url;
+            }
             video.currentTime = nextTime - clip.startTime + clip.inPoint;
             video.play().catch(() => {});
           }
         } else if (!clip && video) {
+          activeClipRef.current = null;
           video.pause();
         }
       }
@@ -218,9 +236,30 @@ export function NativePreview() {
     [composition, syncClip],
   );
 
-  // Sync clip on mount and when composition changes
+  // Sync clip on mount and when composition changes (e.g. after split)
   useEffect(() => {
-    syncClip(currentTime);
+    if (!composition) return;
+    // Force re-match: clear activeClip so syncClip detects the change
+    const clip = findClipAtTime(composition, currentTimeRef.current);
+    if (clip) {
+      const url = assetResolver.resolveUrl(clip.assetId);
+      activeClipRef.current = clip;
+      setActiveClip(clip);
+      setActiveUrl(url);
+      // Update video element position
+      const video = videoRef.current;
+      if (video) {
+        const fullUrl = new URL(url, window.location.href).href;
+        if (video.src !== fullUrl) {
+          video.src = url;
+          video.load();
+        }
+        video.currentTime = currentTimeRef.current - clip.startTime + clip.inPoint;
+        if (playingRef.current) {
+          video.play().catch(() => {});
+        }
+      }
+    }
   }, [composition]);
 
   // Cleanup on unmount
