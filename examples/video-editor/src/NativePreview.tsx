@@ -18,9 +18,6 @@ function formatTime(seconds: number): string {
   return `${m}:${String(s).padStart(2, '0')}.${ms}`;
 }
 
-/**
- * Find the video clip at the given composition time.
- */
 function findClipAtTime(
   composition: { tracks: ReadonlyArray<{ type: string; clips: ReadonlyArray<ClipInfo> }> },
   time: number,
@@ -35,6 +32,49 @@ function findClipAtTime(
   return null;
 }
 
+/**
+ * The single source of truth for "make the video element show the right frame".
+ * Call this from ANY trigger: seek, tick, composition change, etc.
+ */
+function applyTimeToVideo(
+  video: HTMLVideoElement,
+  composition: { tracks: ReadonlyArray<{ type: string; clips: ReadonlyArray<ClipInfo> }> },
+  time: number,
+  prevClip: ClipInfo | null,
+  isPlaying: boolean,
+): { clip: ClipInfo | null; url: string } {
+  const clip = findClipAtTime(composition, time);
+
+  if (!clip) {
+    video.pause();
+    return { clip: null, url: '' };
+  }
+
+  const url = assetResolver.resolveUrl(clip.assetId);
+  const fullUrl = new URL(url, window.location.href).href;
+  const clipOffset = time - clip.startTime + clip.inPoint;
+
+  // Determine if we need to update the video element
+  const srcChanged = video.src !== fullUrl;
+  const clipChanged = !prevClip
+    || clip.assetId !== prevClip.assetId
+    || clip.startTime !== prevClip.startTime;
+
+  if (srcChanged) {
+    video.src = url;
+    video.currentTime = clipOffset;
+    if (isPlaying) video.play().catch(() => {});
+  } else if (clipChanged || !isPlaying) {
+    // Same src but different clip region (after split), or paused seek
+    if (Math.abs(video.currentTime - clipOffset) > 0.05) {
+      video.currentTime = clipOffset;
+    }
+    if (isPlaying && video.paused) video.play().catch(() => {});
+  }
+
+  return { clip, url };
+}
+
 export function NativePreview() {
   const composition = useComposition();
   const { seek: storeSeek, currentTime: storeCurrentTime } = usePlayback();
@@ -46,81 +86,53 @@ export function NativePreview() {
   const [activeClip, setActiveClip] = useState<ClipInfo | null>(null);
   const [activeUrl, setActiveUrl] = useState('');
 
-  // Keep refs for rAF callback
   const playingRef = useRef(false);
   const currentTimeRef = useRef(0);
   const lastFrameTimeRef = useRef(0);
+  const activeClipRef = useRef<ClipInfo | null>(null);
+  const compositionRef = useRef(composition);
+  compositionRef.current = composition;
   const storeSeekRef = useRef(storeSeek);
   storeSeekRef.current = storeSeek;
-  const activeClipRef = useRef<ClipInfo | null>(null);
 
   const totalDuration = composition?.duration ?? 0;
 
-  // React to external seeks (e.g. from Timeline click) when not playing
-  useEffect(() => {
-    if (playingRef.current) return;
-    if (Math.abs(storeCurrentTime - currentTimeRef.current) > 0.15) {
-      currentTimeRef.current = storeCurrentTime;
-      setCurrentTime(storeCurrentTime);
-      // syncClip will be called by the effect below
-    }
-  }, [storeCurrentTime]);
-
-  // Sync clip with current time.
-  // Compare by startTime+assetId to detect split clips (same assetId, different startTime).
-  const syncClip = useCallback(
+  // ── Unified seek: update time + video element ─────────────────────
+  const seekTo = useCallback(
     (time: number) => {
-      if (!composition) return;
-      const clip = findClipAtTime(composition, time);
-      if (clip) {
-        const changed = !activeClip
-          || clip.assetId !== activeClip.assetId
-          || clip.startTime !== activeClip.startTime;
-        if (changed) {
-          const url = assetResolver.resolveUrl(clip.assetId);
-          activeClipRef.current = clip;
-          setActiveClip(clip);
-          setActiveUrl(url);
-        }
-      } else if (activeClip) {
-        activeClipRef.current = null;
-        setActiveClip(null);
-        setActiveUrl('');
-      }
+      currentTimeRef.current = time;
+      setCurrentTime(time);
+
+      const video = videoRef.current;
+      const comp = compositionRef.current;
+      if (!video || !comp) return;
+
+      const { clip, url } = applyTimeToVideo(
+        video, comp, time, activeClipRef.current, playingRef.current,
+      );
+      activeClipRef.current = clip;
+      setActiveClip(clip);
+      setActiveUrl(url);
     },
-    [composition, activeClip],
+    [],
   );
 
-  // When clip changes or time updates, seek the video element to the right offset
+  // ── React to external seeks (from Timeline click, etc.) ───────────
   useEffect(() => {
-    const video = videoRef.current;
-    if (!video || !activeClip) return;
-
-    const clipOffset = currentTime - activeClip.startTime + activeClip.inPoint;
-    // Only seek if the difference is significant (avoid constant seeking during playback)
-    if (!playing && Math.abs(video.currentTime - clipOffset) > 0.1) {
-      video.currentTime = clipOffset;
+    // Skip if we're driving the time ourselves (during playback)
+    if (playingRef.current) return;
+    if (Math.abs(storeCurrentTime - currentTimeRef.current) > 0.01) {
+      seekTo(storeCurrentTime);
     }
-  }, [activeClip, currentTime, playing]);
+  }, [storeCurrentTime, seekTo]);
 
-  // Handle video src changes
+  // ── React to composition changes (split, move, add clip) ──────────
   useEffect(() => {
-    const video = videoRef.current;
-    if (!video || !activeUrl) return;
+    if (!composition) return;
+    seekTo(currentTimeRef.current);
+  }, [composition, seekTo]);
 
-    if (video.src !== new URL(activeUrl, window.location.href).href) {
-      video.src = activeUrl;
-      video.load();
-      if (activeClip) {
-        video.currentTime = currentTime - activeClip.startTime + activeClip.inPoint;
-      }
-      if (playing) {
-        video.play().catch(() => { /* user interaction required */ });
-      }
-    }
-  }, [activeUrl]);
-
-  // rAF playback loop
+  // ── rAF playback loop ─────────────────────────────────────────────
   const tick = useCallback(
     (timestamp: number) => {
       if (!playingRef.current) return;
@@ -128,146 +140,76 @@ export function NativePreview() {
       if (lastFrameTimeRef.current === 0) {
         lastFrameTimeRef.current = timestamp;
       }
-
       const delta = (timestamp - lastFrameTimeRef.current) / 1000;
       lastFrameTimeRef.current = timestamp;
 
+      const comp = compositionRef.current;
+      const dur = comp?.duration ?? 0;
       let nextTime = currentTimeRef.current + delta;
-
-      // Check if we've reached the end — loop back
-      if (nextTime >= totalDuration) {
-        nextTime = 0;
-      }
+      if (nextTime >= dur) nextTime = 0;
 
       currentTimeRef.current = nextTime;
       setCurrentTime(nextTime);
       storeSeekRef.current(nextTime);
 
-      // Check if we need to switch clips
-      if (composition) {
-        const clip = findClipAtTime(composition, nextTime);
-        const video = videoRef.current;
-
-        if (clip && video) {
-          const url = assetResolver.resolveUrl(clip.assetId);
-          const fullUrl = new URL(url, window.location.href).href;
-
-          // Detect clip change: different URL OR same asset but different clip region (after split)
-          const prevClip = activeClipRef.current;
-          const clipChanged = video.src !== fullUrl
-            || !prevClip
-            || clip.startTime !== prevClip.startTime;
-
-          if (clipChanged) {
-            activeClipRef.current = clip;
-            setActiveClip(clip);
-            setActiveUrl(url);
-            if (video.src !== fullUrl) {
-              video.src = url;
-            }
-            video.currentTime = nextTime - clip.startTime + clip.inPoint;
-            video.play().catch(() => {});
-          }
-        } else if (!clip && video) {
-          activeClipRef.current = null;
-          video.pause();
+      const video = videoRef.current;
+      if (video && comp) {
+        const { clip } = applyTimeToVideo(
+          video, comp, nextTime, activeClipRef.current, true,
+        );
+        if (clip !== activeClipRef.current) {
+          activeClipRef.current = clip;
+          setActiveClip(clip);
+          setActiveUrl(clip ? assetResolver.resolveUrl(clip.assetId) : '');
         }
       }
 
       rafRef.current = requestAnimationFrame(tick);
     },
-    [composition, totalDuration],
+    [], // no deps — reads everything from refs
   );
 
+  // ── Play / Pause ──────────────────────────────────────────────────
   const handlePlay = useCallback(() => {
     const video = videoRef.current;
-    if (!composition) return;
+    if (!compositionRef.current) return;
 
     if (playing) {
-      // Pause
       setPlaying(false);
       playingRef.current = false;
       cancelAnimationFrame(rafRef.current);
       if (video) video.pause();
     } else {
-      // Play
-      // If at end, restart from beginning
-      if (currentTimeRef.current >= totalDuration - 0.1) {
-        currentTimeRef.current = 0;
-        setCurrentTime(0);
-        storeSeek(0);
-        syncClip(0);
+      const dur = compositionRef.current.duration;
+      if (currentTimeRef.current >= dur - 0.1) {
+        seekTo(0);
+        storeSeekRef.current(0);
       }
 
       setPlaying(true);
       playingRef.current = true;
       lastFrameTimeRef.current = 0;
 
-      if (video && activeUrl) {
+      if (video && activeClipRef.current) {
         video.play().catch(() => {});
       }
 
       rafRef.current = requestAnimationFrame(tick);
     }
-  }, [playing, composition, totalDuration, tick, syncClip, activeUrl]);
+  }, [playing, seekTo, tick]);
 
+  // ── Preview seekbar drag ──────────────────────────────────────────
   const handleSeek = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const time = parseFloat(e.target.value);
-      currentTimeRef.current = time;
-      setCurrentTime(time);
-      storeSeek(time);
-      syncClip(time);
-
-      const video = videoRef.current;
-      if (video && composition) {
-        const clip = findClipAtTime(composition, time);
-        if (clip) {
-          const url = assetResolver.resolveUrl(clip.assetId);
-          const fullUrl = new URL(url, window.location.href).href;
-          if (video.src !== fullUrl) {
-            video.src = url;
-            video.load();
-          }
-          video.currentTime = time - clip.startTime + clip.inPoint;
-        }
-      }
+      seekTo(time);
+      storeSeekRef.current(time);
     },
-    [composition, syncClip],
+    [seekTo],
   );
 
-  // Sync clip on mount and when composition changes (e.g. after split)
-  useEffect(() => {
-    if (!composition) return;
-    // Force re-match: clear activeClip so syncClip detects the change
-    const clip = findClipAtTime(composition, currentTimeRef.current);
-    if (clip) {
-      const url = assetResolver.resolveUrl(clip.assetId);
-      activeClipRef.current = clip;
-      setActiveClip(clip);
-      setActiveUrl(url);
-      // Update video element position
-      const video = videoRef.current;
-      if (video) {
-        const fullUrl = new URL(url, window.location.href).href;
-        if (video.src !== fullUrl) {
-          video.src = url;
-          video.load();
-        }
-        video.currentTime = currentTimeRef.current - clip.startTime + clip.inPoint;
-        if (playingRef.current) {
-          video.play().catch(() => {});
-        }
-      }
-    }
-  }, [composition]);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      cancelAnimationFrame(rafRef.current);
-    };
-  }, []);
+  // Cleanup
+  useEffect(() => () => cancelAnimationFrame(rafRef.current), []);
 
   return (
     <div className="native-preview">
@@ -281,9 +223,7 @@ export function NativePreview() {
           />
         ) : (
           <div className="native-preview__empty">
-            {composition
-              ? 'No clip at current position'
-              : 'No composition loaded'}
+            {composition ? 'No clip at current position' : 'No composition loaded'}
           </div>
         )}
       </div>
