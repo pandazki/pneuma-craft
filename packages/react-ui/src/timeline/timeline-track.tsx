@@ -10,6 +10,7 @@ export interface TimelineTrackProps {
   onClipMove?: (clipId: string, newStartTime: number) => void;
   onClipSplit?: (clipId: string, time: number) => void;
   onClipSelect?: (clipId: string) => void;
+  onClipDragStart?: () => void;
   selectedClipIds?: string[];
 }
 
@@ -94,6 +95,7 @@ export function TimelineTrack({
   onClipMove,
   onClipSplit,
   onClipSelect,
+  onClipDragStart,
   selectedClipIds,
 }: TimelineTrackProps) {
   const [dragState, setDragState] = useState<DragState | null>(null);
@@ -129,6 +131,7 @@ export function TimelineTrack({
       };
       dragRef.current = initial;
       setDragState(initial);
+      onClipDragStart?.();
     },
     [track.clips, track.locked, pixelsToTime],
   );

@@ -12,6 +12,7 @@ import '@pneuma-craft/react-ui/styles';
 import { assetResolver } from './asset-resolver';
 import { seedDemoData } from './seed';
 import { NativePreview } from './NativePreview';
+import type { NativePreviewHandle } from './NativePreview';
 import './App.css';
 
 function EventLogPanel({ events }: { events: Event[] }) {
@@ -38,6 +39,7 @@ function EditorContent() {
   const selection = useSelection();
   const events = useEventLog();
   const seededRef = useRef(false);
+  const previewRef = useRef<NativePreviewHandle>(null);
   const [selectedRootAssetId, setSelectedRootAssetId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -91,6 +93,25 @@ function EditorContent() {
   const imageAssets = assets.filter((a) => a.type === 'image');
   const provenanceRootId = selectedAssetIds[0] ?? selectedRootAssetId ?? imageAssets[0]?.id ?? null;
 
+  // Track whether playback was active before an editing operation
+  const wasPlayingRef = useRef(false);
+
+  const pauseForEdit = useCallback(() => {
+    const p = previewRef.current;
+    if (p?.isPlaying()) {
+      wasPlayingRef.current = true;
+      p.pause();
+    }
+  }, []);
+
+  const resumeAfterEdit = useCallback(() => {
+    if (wasPlayingRef.current) {
+      wasPlayingRef.current = false;
+      // Short delay so the composition state settles before resuming
+      setTimeout(() => previewRef.current?.resume(), 50);
+    }
+  }, []);
+
   const handleClipMove = useCallback(
     (clipId: string, newStartTime: number) => {
       dispatch('human', {
@@ -98,19 +119,22 @@ function EditorContent() {
         clipId,
         startTime: Math.max(0, newStartTime),
       });
+      resumeAfterEdit();
     },
-    [dispatch],
+    [dispatch, resumeAfterEdit],
   );
 
   const handleClipSplit = useCallback(
     (clipId: string, time: number) => {
+      pauseForEdit();
       dispatch('human', {
         type: 'composition:split-clip',
         clipId,
         time,
       });
+      resumeAfterEdit();
     },
-    [dispatch],
+    [dispatch, pauseForEdit, resumeAfterEdit],
   );
 
   const addClipAtTime = useCallback(
@@ -178,7 +202,7 @@ function EditorContent() {
 
       {/* ── Center top: Preview ────────────────────────────── */}
       <main className="editor-preview">
-        <NativePreview />
+        <NativePreview ref={previewRef} />
       </main>
 
       {/* ── Left sidebar bottom: Provenance + Event Log ───── */}
@@ -209,6 +233,7 @@ function EditorContent() {
           onClipSplit={handleClipSplit}
           onClipSelect={handleClipSelect}
           onAssetDrop={handleAssetDrop}
+          onClipDragStart={pauseForEdit}
           selectedClipIds={selectedClipIds}
         />
       </section>

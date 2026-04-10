@@ -1,7 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useImperativeHandle, forwardRef } from 'react';
 import { useComposition, usePlayback } from '@pneuma-craft/react';
 import { assetResolver } from './asset-resolver';
 import './NativePreview.css';
+
+export interface NativePreviewHandle {
+  pause(): void;
+  resume(): void;
+  isPlaying(): boolean;
+}
 
 interface ClipInfo {
   readonly assetId: string;
@@ -75,7 +81,7 @@ function applyTimeToVideo(
   return { clip, url };
 }
 
-export function NativePreview() {
+export const NativePreview = forwardRef<NativePreviewHandle>(function NativePreview(_props, ref) {
   const composition = useComposition();
   const { seek: storeSeek, currentTime: storeCurrentTime } = usePlayback();
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -204,6 +210,30 @@ export function NativePreview() {
     }
   }, [playing, seekTo, tick]);
 
+  // ── Expose pause/resume to parent ─────────────────────────────────
+  const pausePlayback = useCallback(() => {
+    if (!playingRef.current) return;
+    setPlaying(false);
+    playingRef.current = false;
+    cancelAnimationFrame(rafRef.current);
+    videoRef.current?.pause();
+  }, []);
+
+  const resumePlayback = useCallback(() => {
+    if (playingRef.current || !compositionRef.current) return;
+    setPlaying(true);
+    playingRef.current = true;
+    lastFrameTimeRef.current = 0;
+    videoRef.current?.play().catch(() => {});
+    rafRef.current = requestAnimationFrame(tick);
+  }, [tick]);
+
+  useImperativeHandle(ref, () => ({
+    pause: pausePlayback,
+    resume: resumePlayback,
+    isPlaying: () => playingRef.current,
+  }), [pausePlayback, resumePlayback]);
+
   // ── Preview seekbar drag ──────────────────────────────────────────
   const handleSeek = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -213,6 +243,21 @@ export function NativePreview() {
     },
     [seekTo],
   );
+
+  // ── Spacebar global play/pause ──────────────────────────────────────
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'Space' && !e.metaKey && !e.ctrlKey) {
+        // Don't trigger if user is typing in an input
+        const tag = (e.target as HTMLElement).tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+        e.preventDefault();
+        handlePlay();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [handlePlay]);
 
   // Cleanup
   useEffect(() => () => cancelAnimationFrame(rafRef.current), []);
@@ -265,4 +310,4 @@ export function NativePreview() {
       </div>
     </div>
   );
-}
+});
