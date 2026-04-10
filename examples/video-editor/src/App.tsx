@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { PneumaCraftProvider, useDispatch, useAssets, useComposition } from '@pneuma-craft/react';
+import { PneumaCraftProvider, useDispatch, useAssets, useComposition, usePlayback } from '@pneuma-craft/react';
 import {
   Timeline, AssetLibrary, ProvenanceTree,
   Panel, Button, IconButton,
@@ -14,6 +14,7 @@ function EditorContent() {
   const dispatch = useDispatch();
   const assets = useAssets();
   const composition = useComposition();
+  const { seek } = usePlayback();
   const seededRef = useRef(false);
   const [selectedRootAssetId, setSelectedRootAssetId] = useState<string | null>(null);
 
@@ -116,7 +117,7 @@ function EditorContent() {
 
       {/* ── Bottom: Timeline ───────────────────────────────── */}
       <section className="editor-timeline">
-        <Timeline defaultPixelsPerSecond={60} />
+        <Timeline defaultPixelsPerSecond={60} onSeek={seek} />
       </section>
     </div>
   );

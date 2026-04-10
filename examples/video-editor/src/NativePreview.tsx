@@ -37,7 +37,7 @@ function findClipAtTime(
 
 export function NativePreview() {
   const composition = useComposition();
-  const { seek: storeSeek } = usePlayback();
+  const { seek: storeSeek, currentTime: storeCurrentTime } = usePlayback();
   const videoRef = useRef<HTMLVideoElement>(null);
   const rafRef = useRef<number>(0);
 
@@ -54,6 +54,16 @@ export function NativePreview() {
   storeSeekRef.current = storeSeek;
 
   const totalDuration = composition?.duration ?? 0;
+
+  // React to external seeks (e.g. from Timeline click) when not playing
+  useEffect(() => {
+    if (playingRef.current) return;
+    if (Math.abs(storeCurrentTime - currentTimeRef.current) > 0.15) {
+      currentTimeRef.current = storeCurrentTime;
+      setCurrentTime(storeCurrentTime);
+      // syncClip will be called by the effect below
+    }
+  }, [storeCurrentTime]);
 
   // Sync clip with current time
   const syncClip = useCallback(

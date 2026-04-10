@@ -1,4 +1,4 @@
-import React, { useState, createContext, useContext } from 'react';
+import React, { useState, useCallback, createContext, useContext } from 'react';
 import { TimelineRoot as HeadlessTimeline } from '@pneuma-craft/react';
 import type { TimelineState } from '@pneuma-craft/react';
 import { TimelineToolbar } from './timeline-toolbar.js';
@@ -9,6 +9,7 @@ import './timeline.css';
 interface TimelineContextValue extends TimelineState {
   pixelsPerSecond: number;
   setPixelsPerSecond: (v: number) => void;
+  onSeek?: (time: number) => void;
 }
 
 const TimelineContext = createContext<TimelineContextValue | null>(null);
@@ -23,6 +24,7 @@ export interface TimelineProps {
   className?: string;
   style?: React.CSSProperties;
   defaultPixelsPerSecond?: number;
+  onSeek?: (time: number) => void;
   children?: React.ReactNode;
 }
 
@@ -42,13 +44,31 @@ function CompoundPlayhead() {
 }
 
 function CompoundBody({ children }: { children: React.ReactNode }) {
-  return <div className="pc-timeline-body">{children}</div>;
+  const { pixelsToTime, onSeek } = useTimelineContext();
+
+  const handleClick = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      if (!onSeek) return;
+      const rect = e.currentTarget.getBoundingClientRect();
+      const x = e.clientX - rect.left + e.currentTarget.scrollLeft - 120; // 120 = track header width
+      if (x < 0) return;
+      onSeek(pixelsToTime(x));
+    },
+    [pixelsToTime, onSeek],
+  );
+
+  return (
+    <div className="pc-timeline-body" onClick={handleClick} style={{ cursor: onSeek ? 'crosshair' : undefined }}>
+      {children}
+    </div>
+  );
 }
 
 function TimelineBase({
   className,
   style,
   defaultPixelsPerSecond = 100,
+  onSeek,
   children,
 }: TimelineProps) {
   const [pixelsPerSecond, setPixelsPerSecond] = useState(defaultPixelsPerSecond);
@@ -56,7 +76,7 @@ function TimelineBase({
   return (
     <HeadlessTimeline pixelsPerSecond={pixelsPerSecond}>
       {(state) => (
-        <TimelineContext.Provider value={{ ...state, pixelsPerSecond, setPixelsPerSecond }}>
+        <TimelineContext.Provider value={{ ...state, pixelsPerSecond, setPixelsPerSecond, onSeek }}>
           <div className={`pc-timeline ${className ?? ''}`} style={style}>
             {children ?? (
               <>
