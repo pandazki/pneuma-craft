@@ -13,6 +13,7 @@ interface TimelineContextValue extends TimelineState {
   onClipMove?: (clipId: string, newStartTime: number) => void;
   onClipSplit?: (clipId: string, time: number) => void;
   onClipSelect?: (clipId: string) => void;
+  onAssetDrop?: (assetId: string, time: number) => void;
   selectedClipIds?: string[];
 }
 
@@ -32,6 +33,7 @@ export interface TimelineProps {
   onClipMove?: (clipId: string, newStartTime: number) => void;
   onClipSplit?: (clipId: string, time: number) => void;
   onClipSelect?: (clipId: string) => void;
+  onAssetDrop?: (assetId: string, time: number) => void;
   selectedClipIds?: string[];
   children?: React.ReactNode;
 }
@@ -63,21 +65,47 @@ function CompoundPlayhead() {
 }
 
 function CompoundBody({ children }: { children: React.ReactNode }) {
-  const { pixelsToTime, onSeek } = useTimelineContext();
+  const { pixelsToTime, onSeek, onAssetDrop } = useTimelineContext();
 
   const handleClick = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
       if (!onSeek) return;
       const rect = e.currentTarget.getBoundingClientRect();
-      const x = e.clientX - rect.left + e.currentTarget.scrollLeft - 120; // 120 = track header width
+      const x = e.clientX - rect.left + e.currentTarget.scrollLeft - 120;
       if (x < 0) return;
       onSeek(pixelsToTime(x));
     },
     [pixelsToTime, onSeek],
   );
 
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    if (e.dataTransfer.types.includes('application/x-pneuma-asset-id')) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+    }
+  }, []);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      const assetId = e.dataTransfer.getData('application/x-pneuma-asset-id');
+      if (!assetId || !onAssetDrop) return;
+      const rect = e.currentTarget.getBoundingClientRect();
+      const x = e.clientX - rect.left + e.currentTarget.scrollLeft - 120;
+      const time = Math.max(0, pixelsToTime(x));
+      onAssetDrop(assetId, time);
+    },
+    [pixelsToTime, onAssetDrop],
+  );
+
   return (
-    <div className="pc-timeline-body" onClick={handleClick} style={{ cursor: onSeek ? 'crosshair' : undefined }}>
+    <div
+      className="pc-timeline-body"
+      onClick={handleClick}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+      style={{ cursor: onSeek ? 'crosshair' : undefined }}
+    >
       {children}
     </div>
   );
@@ -91,6 +119,7 @@ function TimelineBase({
   onClipMove,
   onClipSplit,
   onClipSelect,
+  onAssetDrop,
   selectedClipIds,
   children,
 }: TimelineProps) {
@@ -99,7 +128,7 @@ function TimelineBase({
   return (
     <HeadlessTimeline pixelsPerSecond={pixelsPerSecond}>
       {(state) => (
-        <TimelineContext.Provider value={{ ...state, pixelsPerSecond, setPixelsPerSecond, onSeek, onClipMove, onClipSplit, onClipSelect, selectedClipIds }}>
+        <TimelineContext.Provider value={{ ...state, pixelsPerSecond, setPixelsPerSecond, onSeek, onClipMove, onClipSplit, onClipSelect, onAssetDrop, selectedClipIds }}>
           <div className={`pc-timeline ${className ?? ''}`} style={style}>
             {children ?? (
               <>

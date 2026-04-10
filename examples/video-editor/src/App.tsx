@@ -113,8 +113,8 @@ function EditorContent() {
     [dispatch],
   );
 
-  const handleAddClip = useCallback(
-    (assetId: string) => {
+  const addClipAtTime = useCallback(
+    (assetId: string, startTime: number) => {
       if (!composition) return;
       const asset = assets.find((a) => a.id === assetId);
       if (!asset) return;
@@ -132,7 +132,7 @@ function EditorContent() {
         trackId: track.id,
         clip: {
           assetId: asset.id,
-          startTime: composition.duration,
+          startTime,
           duration,
           inPoint: 0,
           outPoint: duration,
@@ -141,6 +141,16 @@ function EditorContent() {
       });
     },
     [composition, assets, dispatch],
+  );
+
+  const handleAddClip = useCallback(
+    (assetId: string) => addClipAtTime(assetId, composition?.duration ?? 0),
+    [addClipAtTime, composition?.duration],
+  );
+
+  const handleAssetDrop = useCallback(
+    (assetId: string, time: number) => addClipAtTime(assetId, time),
+    [addClipAtTime],
   );
 
   return (
@@ -163,19 +173,6 @@ function EditorContent() {
           <AssetLibrary
             onAssetSelect={(id) => setSelectedRootAssetId(id)}
           />
-          <div className="asset-actions">
-            <p className="asset-actions__hint">
-              Select a video or audio asset above, then click to add it to the timeline.
-            </p>
-            <Button
-              variant="secondary"
-              onClick={() => {
-                if (selectedRootAssetId) handleAddClip(selectedRootAssetId);
-              }}
-            >
-              + Add to Timeline
-            </Button>
-          </div>
         </Panel>
       </aside>
 
@@ -211,6 +208,7 @@ function EditorContent() {
           onClipMove={handleClipMove}
           onClipSplit={handleClipSplit}
           onClipSelect={handleClipSelect}
+          onAssetDrop={handleAssetDrop}
           selectedClipIds={selectedClipIds}
         />
       </section>

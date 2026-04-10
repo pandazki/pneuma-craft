@@ -12,6 +12,11 @@ export function AssetLibraryItem({ asset, selected, onSelect }: AssetLibraryItem
     <div
       className={`pc-asset-item ${selected ? 'pc-asset-item--selected' : ''}`}
       onClick={() => onSelect(asset.id)}
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData('application/x-pneuma-asset-id', asset.id);
+        e.dataTransfer.effectAllowed = 'copy';
+      }}
     >
       <div className="pc-asset-item-thumbnail">
         {asset.type === 'image' && asset.uri ? (
