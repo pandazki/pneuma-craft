@@ -111,6 +111,11 @@
   opacity: 0.85;
 }
 
+.pc-timeline-clip--selected {
+  outline: 2px solid var(--pc-primary);
+  outline-offset: -1px;
+}
+
 .pc-timeline-clip--dragging {
   opacity: 0.7;
   z-index: 20;

@@ -50,9 +50,14 @@
   color: var(--pc-fg-muted);
   transition: background var(--pc-transition), color var(--pc-transition);
 }
-.pc-icon-button:hover {
+.pc-icon-button:hover:not(:disabled) {
   background: var(--pc-surface-hover);
   color: var(--pc-fg);
+}
+
+.pc-icon-button:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
 }
 
 .pc-panel {

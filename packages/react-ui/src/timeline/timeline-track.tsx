@@ -9,6 +9,8 @@ export interface TimelineTrackProps {
   pixelsToTime?: (px: number) => number;
   onClipMove?: (clipId: string, newStartTime: number) => void;
   onClipSplit?: (clipId: string, time: number) => void;
+  onClipSelect?: (clipId: string) => void;
+  selectedClipIds?: string[];
 }
 
 interface DragState {
@@ -91,6 +93,8 @@ export function TimelineTrack({
   pixelsToTime,
   onClipMove,
   onClipSplit,
+  onClipSelect,
+  selectedClipIds,
 }: TimelineTrackProps) {
   const [dragState, setDragState] = useState<DragState | null>(null);
 
@@ -241,8 +245,10 @@ export function TimelineTrack({
               timeToPixels={timeToPixels}
               pixelsToTime={pixelsToTime}
               isDragging={dragState?.clipId === clip.id}
+              isSelected={selectedClipIds?.includes(clip.id) ?? false}
               onDragStart={handleDragStart}
               onSplit={onClipSplit}
+              onSelect={onClipSelect}
             />
           );
         })}

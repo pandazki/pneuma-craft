@@ -12,6 +12,8 @@ interface TimelineContextValue extends TimelineState {
   onSeek?: (time: number) => void;
   onClipMove?: (clipId: string, newStartTime: number) => void;
   onClipSplit?: (clipId: string, time: number) => void;
+  onClipSelect?: (clipId: string) => void;
+  selectedClipIds?: string[];
 }
 
 const TimelineContext = createContext<TimelineContextValue | null>(null);
@@ -29,6 +31,8 @@ export interface TimelineProps {
   onSeek?: (time: number) => void;
   onClipMove?: (clipId: string, newStartTime: number) => void;
   onClipSplit?: (clipId: string, time: number) => void;
+  onClipSelect?: (clipId: string) => void;
+  selectedClipIds?: string[];
   children?: React.ReactNode;
 }
 
@@ -47,6 +51,8 @@ function CompoundTrackList() {
       pixelsToTime={state.pixelsToTime}
       onClipMove={state.onClipMove}
       onClipSplit={state.onClipSplit}
+      onClipSelect={state.onClipSelect}
+      selectedClipIds={state.selectedClipIds}
     />
   );
 }
@@ -84,6 +90,8 @@ function TimelineBase({
   onSeek,
   onClipMove,
   onClipSplit,
+  onClipSelect,
+  selectedClipIds,
   children,
 }: TimelineProps) {
   const [pixelsPerSecond, setPixelsPerSecond] = useState(defaultPixelsPerSecond);
@@ -91,7 +99,7 @@ function TimelineBase({
   return (
     <HeadlessTimeline pixelsPerSecond={pixelsPerSecond}>
       {(state) => (
-        <TimelineContext.Provider value={{ ...state, pixelsPerSecond, setPixelsPerSecond, onSeek, onClipMove, onClipSplit }}>
+        <TimelineContext.Provider value={{ ...state, pixelsPerSecond, setPixelsPerSecond, onSeek, onClipMove, onClipSplit, onClipSelect, selectedClipIds }}>
           <div className={`pc-timeline ${className ?? ''}`} style={style}>
             {children ?? (
               <>

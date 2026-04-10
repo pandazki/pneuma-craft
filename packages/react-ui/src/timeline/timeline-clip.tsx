@@ -8,8 +8,10 @@ export interface TimelineClipProps {
   timeToPixels: (time: number) => number;
   pixelsToTime?: (px: number) => number;
   isDragging?: boolean;
+  isSelected?: boolean;
   onDragStart?: (clipId: string, mouseX: number) => void;
   onSplit?: (clipId: string, time: number) => void;
+  onSelect?: (clipId: string) => void;
 }
 
 export function TimelineClip({
@@ -19,8 +21,10 @@ export function TimelineClip({
   timeToPixels,
   pixelsToTime,
   isDragging = false,
+  isSelected = false,
   onDragStart,
   onSplit,
+  onSelect,
 }: TimelineClipProps) {
   const width = timeToPixels(clip.duration);
 
@@ -51,16 +55,25 @@ export function TimelineClip({
 
   const handleClick = useCallback(
     (e: React.MouseEvent) => {
-      if (!e.altKey || e.button !== 0) return;
-      e.preventDefault();
-      e.stopPropagation();
-      if (!onSplit || !pixelsToTime) return;
-      const rect = e.currentTarget.getBoundingClientRect();
-      const clickX = e.clientX - rect.left;
-      const splitTime = clip.startTime + pixelsToTime(clickX);
-      onSplit(clip.id, splitTime);
+      if (e.button !== 0) return;
+      // Alt+click is for split
+      if (e.altKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!onSplit || !pixelsToTime) return;
+        const rect = e.currentTarget.getBoundingClientRect();
+        const clickX = e.clientX - rect.left;
+        const splitTime = clip.startTime + pixelsToTime(clickX);
+        onSplit(clip.id, splitTime);
+        return;
+      }
+      // Normal click selects the clip
+      if (onSelect) {
+        e.stopPropagation();
+        onSelect(clip.id);
+      }
     },
-    [clip, pixelsToTime, onSplit],
+    [clip, pixelsToTime, onSplit, onSelect],
   );
 
   const clipStyle: React.CSSProperties = {
@@ -72,6 +85,7 @@ export function TimelineClip({
     'pc-timeline-clip',
     `pc-timeline-clip--${trackType}`,
     isDragging ? 'pc-timeline-clip--dragging' : '',
+    isSelected ? 'pc-timeline-clip--selected' : '',
   ]
     .filter(Boolean)
     .join(' ');

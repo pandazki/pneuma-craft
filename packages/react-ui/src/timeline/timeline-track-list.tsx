@@ -9,9 +9,11 @@ export interface TimelineTrackListProps {
   pixelsToTime?: (px: number) => number;
   onClipMove?: (clipId: string, newStartTime: number) => void;
   onClipSplit?: (clipId: string, time: number) => void;
+  onClipSelect?: (clipId: string) => void;
+  selectedClipIds?: string[];
 }
 
-export function TimelineTrackList({ tracks, duration, timeToPixels, pixelsToTime, onClipMove, onClipSplit }: TimelineTrackListProps) {
+export function TimelineTrackList({ tracks, duration, timeToPixels, pixelsToTime, onClipMove, onClipSplit, onClipSelect, selectedClipIds }: TimelineTrackListProps) {
   const totalWidth = timeToPixels(duration);
   return (
     <div className="pc-timeline-tracks" style={{ minWidth: `${120 + totalWidth}px` }}>
@@ -23,6 +25,8 @@ export function TimelineTrackList({ tracks, duration, timeToPixels, pixelsToTime
           pixelsToTime={pixelsToTime}
           onClipMove={onClipMove}
           onClipSplit={onClipSplit}
+          onClipSelect={onClipSelect}
+          selectedClipIds={selectedClipIds}
         />
       ))}
     </div>
