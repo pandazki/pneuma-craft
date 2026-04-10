@@ -4,9 +4,14 @@
   justify-content: center;
   gap: var(--pc-space-2);
   padding: var(--pc-space-2) var(--pc-space-4);
+  border: none;
   border-radius: var(--pc-radius-md);
   font-size: var(--pc-font-size-sm);
   font-weight: 500;
+  font-family: inherit;
+  color: var(--pc-fg);
+  background: transparent;
+  cursor: pointer;
   transition: background var(--pc-transition), color var(--pc-transition);
   white-space: nowrap;
 }
@@ -14,6 +19,7 @@
 .pc-button--primary {
   background: var(--pc-primary);
   color: var(--pc-bg);
+  font-weight: 600;
 }
 .pc-button--primary:hover {
   background: var(--pc-primary-hover);
@@ -46,8 +52,12 @@
   justify-content: center;
   width: 28px;
   height: 28px;
+  border: none;
   border-radius: var(--pc-radius-sm);
+  background: transparent;
   color: var(--pc-fg-muted);
+  font-family: inherit;
+  cursor: pointer;
   transition: background var(--pc-transition), color var(--pc-transition);
 }
 .pc-icon-button:hover:not(:disabled) {
