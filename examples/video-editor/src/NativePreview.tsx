@@ -214,29 +214,20 @@ export function NativePreview() {
     [seekTo],
   );
 
-  // When video element mounts (activeUrl goes from '' → url), set its src
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video || !activeClipRef.current) return;
-    const comp = compositionRef.current;
-    if (!comp) return;
-    applyTimeToVideo(video, comp, currentTimeRef.current, null, playingRef.current);
-  }, [activeUrl]);
-
   // Cleanup
   useEffect(() => () => cancelAnimationFrame(rafRef.current), []);
 
   return (
     <div className="native-preview">
       <div className="native-preview__viewport">
-        {activeUrl ? (
-          <video
-            ref={videoRef}
-            className="native-preview__video"
-            playsInline
-            muted
-          />
-        ) : (
+        <video
+          ref={videoRef}
+          className="native-preview__video"
+          playsInline
+          muted
+          style={{ display: activeUrl ? 'block' : 'none' }}
+        />
+        {!activeUrl && (
           <div className="native-preview__empty">
             {composition ? 'No clip at current position' : 'No composition loaded'}
           </div>
