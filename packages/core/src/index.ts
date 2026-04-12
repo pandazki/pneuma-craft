@@ -2,6 +2,7 @@
 export type {
   Asset,
   AssetType,
+  AssetStatus,
   AssetMetadata,
   Actor,
   Operation,

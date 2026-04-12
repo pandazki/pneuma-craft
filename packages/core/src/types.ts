@@ -2,6 +2,18 @@
 
 export type AssetType = 'video' | 'image' | 'audio' | 'text';
 
+/**
+ * Lifecycle status for async AIGC assets.
+ *
+ * - `ready`  — default; asset is fully realized (uri points to a valid file).
+ * - `pending` — queued for generation, not yet running.
+ * - `generating` — provider job in flight; uri may be empty or a placeholder.
+ * - `failed` — generation attempted and errored; uri is typically empty.
+ *
+ * Absence of the field is equivalent to `ready` (backward-compat for existing consumers).
+ */
+export type AssetStatus = 'pending' | 'generating' | 'ready' | 'failed';
+
 export interface AssetMetadata {
   size?: number;
   width?: number;
@@ -21,6 +33,7 @@ export interface Asset {
   readonly metadata: AssetMetadata;
   readonly createdAt: number;
   readonly tags?: string[];
+  readonly status?: AssetStatus;
 }
 
 // ── Provenance Graph ────────────────────────────────────────────────────
@@ -83,7 +96,8 @@ export type AssetCommand =
   | { type: 'asset:register'; asset: Omit<Asset, 'id' | 'createdAt'> }
   | { type: 'asset:remove'; assetId: string }
   | { type: 'asset:update-metadata'; assetId: string; metadata: Partial<AssetMetadata> }
-  | { type: 'asset:tag'; assetId: string; tags: string[] };
+  | { type: 'asset:tag'; assetId: string; tags: string[] }
+  | { type: 'asset:set-status'; assetId: string; status: AssetStatus };
 
 export type ProvenanceCommand =
   | { type: 'provenance:link'; fromAssetId: string | null; toAssetId: string; operation: Operation }
