@@ -24,6 +24,7 @@ export interface TimelineCore {
   getCoreState(): PneumaCraftCoreState;
   getComposition(): Composition | null;
   dispatch(actor: Actor, command: CoreCommand | CompositionCommand): Event[];
+  dispatchEnvelope(envelope: CommandEnvelope<CoreCommand | CompositionCommand>): Event[];
   subscribe(listener: (event: Event) => void): () => void;
   undo(): Event[] | null;
   redo(): Event[] | null;
@@ -59,6 +60,27 @@ export function createTimelineCore(): TimelineCore {
     }
   }
 
+  function dispatchEnvelopeImpl(
+    envelope: CommandEnvelope<CoreCommand | CompositionCommand>,
+  ): Event[] {
+    let events: Event[];
+    if (isCompositionCommand(envelope.command)) {
+      events = handleCompositionCommand(
+        coreState,
+        compState,
+        envelope as unknown as CommandEnvelope<CompositionCommand>,
+      );
+    } else {
+      events = handleCommand(
+        coreState,
+        envelope as unknown as CommandEnvelope<CoreCommand>,
+      );
+    }
+    undoManager.record(envelope.id, events);
+    appendEvents(events);
+    return events;
+  }
+
   return {
     getCoreState(): PneumaCraftCoreState {
       return coreState;
@@ -69,27 +91,18 @@ export function createTimelineCore(): TimelineCore {
     },
 
     dispatch(actor: Actor, command: CoreCommand | CompositionCommand): Event[] {
-      const envelope: CommandEnvelope = {
+      return dispatchEnvelopeImpl({
         id: generateId(),
         actor,
         timestamp: Date.now(),
         command: command as CoreCommand,
-      };
+      });
+    },
 
-      let events: Event[];
-      if (isCompositionCommand(command)) {
-        events = handleCompositionCommand(
-          coreState,
-          compState,
-          envelope as unknown as CommandEnvelope<CompositionCommand>,
-        );
-      } else {
-        events = handleCommand(coreState, envelope);
-      }
-
-      undoManager.record(envelope.id, events);
-      appendEvents(events);
-      return events;
+    dispatchEnvelope(
+      envelope: CommandEnvelope<CoreCommand | CompositionCommand>,
+    ): Event[] {
+      return dispatchEnvelopeImpl(envelope);
     },
 
     subscribe(listener: (event: Event) => void): () => void {

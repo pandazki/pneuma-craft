@@ -138,3 +138,68 @@ describe('TimelineCore', () => {
     });
   });
 });
+
+describe('dispatchEnvelope', () => {
+  it('routes a core command to handleCommand with the envelope timestamp', () => {
+    const tl = createTimelineCore();
+    tl.dispatchEnvelope({
+      id: 'cmd-1',
+      actor: 'human',
+      timestamp: 1712934000000,
+      command: {
+        type: 'asset:register',
+        asset: { id: 'a1', type: 'image', uri: '/x.png', name: 'x', metadata: {} },
+      },
+    });
+    const asset = tl.getCoreState().registry.get('a1');
+    expect(asset?.createdAt).toBe(1712934000000);
+  });
+
+  it('routes a composition command to handleCompositionCommand', () => {
+    const tl = createTimelineCore();
+    tl.dispatchEnvelope({
+      id: 'create-cmd',
+      actor: 'human',
+      timestamp: 1000,
+      command: {
+        type: 'composition:create',
+        settings: { width: 1920, height: 1080, fps: 30, aspectRatio: '16:9' },
+      },
+    });
+    const events = tl.dispatchEnvelope({
+      id: 'add-track-cmd',
+      actor: 'human',
+      timestamp: 2000,
+      command: {
+        type: 'composition:add-track',
+        track: {
+          id: 'my-track',
+          type: 'video',
+          name: 'V1',
+          clips: [],
+          muted: false, volume: 1, locked: false, visible: true,
+        },
+      },
+    });
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe('composition:track-added');
+    expect(events[0].commandId).toBe('add-track-cmd');
+    expect(tl.getComposition()?.tracks[0].id).toBe('my-track');
+  });
+
+  it('participates in the undo stack correctly', () => {
+    const tl = createTimelineCore();
+    tl.dispatchEnvelope({
+      id: 'cmd-1',
+      actor: 'human',
+      timestamp: 1000,
+      command: {
+        type: 'asset:register',
+        asset: { type: 'image', uri: '/x.png', name: 'x', metadata: {} },
+      },
+    });
+    expect(tl.canUndo()).toBe(true);
+    tl.undo();
+    expect(tl.getCoreState().registry.size).toBe(0);
+  });
+});
