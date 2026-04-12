@@ -87,6 +87,43 @@ describe('handleCommand — asset commands', () => {
       expect(() => handleCommand(state, makeEnvelope({ type: 'asset:tag', assetId: 'nope', tags: [] }))).toThrow(CommandValidationError);
     });
   });
+
+  describe('asset:set-status', () => {
+    it('produces asset:status-changed event with previous status', () => {
+      const assetWithStatus: Asset = { ...sampleAsset, status: 'generating' };
+      const state = stateWithAsset(assetWithStatus);
+      const events = handleCommand(state, makeEnvelope({
+        type: 'asset:set-status',
+        assetId: 'asset-1',
+        status: 'ready',
+      }));
+      expect(events).toHaveLength(1);
+      expect(events[0].type).toBe('asset:status-changed');
+      expect(events[0].payload.assetId).toBe('asset-1');
+      expect(events[0].payload.status).toBe('ready');
+      expect(events[0].payload.previousStatus).toBe('generating');
+    });
+
+    it('reports previousStatus as undefined when the asset had no explicit status', () => {
+      const state = stateWithAsset(sampleAsset);
+      const events = handleCommand(state, makeEnvelope({
+        type: 'asset:set-status',
+        assetId: 'asset-1',
+        status: 'failed',
+      }));
+      expect(events).toHaveLength(1);
+      expect(events[0].payload.previousStatus).toBeUndefined();
+    });
+
+    it('throws when asset does not exist', () => {
+      const state = createInitialState();
+      expect(() => handleCommand(state, makeEnvelope({
+        type: 'asset:set-status',
+        assetId: 'missing',
+        status: 'ready',
+      }))).toThrow(CommandValidationError);
+    });
+  });
 });
 
 describe('handleCommand — provenance commands', () => {

@@ -77,6 +77,15 @@ export function handleCommand(
       })];
     }
 
+    case 'asset:set-status': {
+      const asset = requireAsset(state, command.assetId);
+      return [makeEvent(envelope, 'asset:status-changed', {
+        assetId: command.assetId,
+        status: command.status,
+        previousStatus: asset.status,
+      })];
+    }
+
     // ── Provenance commands ────────────────────────────────
     case 'provenance:set-root': {
       requireAsset(state, command.assetId);
