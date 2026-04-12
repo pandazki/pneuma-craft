@@ -46,9 +46,13 @@ export function handleCommand(
   switch (command.type) {
     // ── Asset commands ──────────────────────────────────────
     case 'asset:register': {
+      const id = command.asset.id ?? generateId();
+      if (state.registry.has(id)) {
+        throw new CommandValidationError(`Asset already registered: ${id}`);
+      }
       const asset: Asset = {
         ...command.asset,
-        id: generateId(),
+        id,
         createdAt: envelope.timestamp,
       };
       return [makeEvent(envelope, 'asset:registered', { asset })];

@@ -93,7 +93,7 @@ export interface Event {
 // ── Commands ────────────────────────────────────────────────────────────
 
 export type AssetCommand =
-  | { type: 'asset:register'; asset: Omit<Asset, 'id' | 'createdAt'> }
+  | { type: 'asset:register'; asset: Omit<Asset, 'id' | 'createdAt'> & { id?: string } }
   | { type: 'asset:remove'; assetId: string }
   | { type: 'asset:update-metadata'; assetId: string; metadata: Partial<AssetMetadata> }
   | { type: 'asset:tag'; assetId: string; tags: string[] }

@@ -37,6 +37,39 @@ describe('handleCommand — asset commands', () => {
       expect(asset.uri).toBe('/test.mp4');
       expect(asset.createdAt).toBeDefined();
     });
+
+    it('uses the provided id when supplied', () => {
+      const state = createInitialState();
+      const events = handleCommand(state, makeEnvelope({
+        type: 'asset:register',
+        asset: {
+          id: 'my-explicit-id',
+          type: 'image',
+          uri: '/test.png',
+          name: 'Test',
+          metadata: { width: 256 },
+        },
+      }));
+      expect(events).toHaveLength(1);
+      const asset = events[0].payload.asset as Asset;
+      expect(asset.id).toBe('my-explicit-id');
+      expect(asset.createdAt).toBe(1000); // from envelope timestamp
+    });
+
+    it('throws when registering with a duplicate explicit id', () => {
+      const existing: Asset = { ...sampleAsset, id: 'dup-id' };
+      const state = stateWithAsset(existing);
+      expect(() => handleCommand(state, makeEnvelope({
+        type: 'asset:register',
+        asset: {
+          id: 'dup-id',
+          type: 'video',
+          uri: '/other.mp4',
+          name: 'Other',
+          metadata: {},
+        },
+      }))).toThrow(CommandValidationError);
+    });
   });
 
   describe('asset:remove', () => {
