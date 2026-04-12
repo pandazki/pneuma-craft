@@ -192,6 +192,56 @@ describe('composition:add-clip', () => {
   });
 });
 
+describe('composition:add-clip — explicit id', () => {
+  it('uses the provided clip id when supplied', () => {
+    const core = coreWithAsset('a1');
+    const compState = stateWith(createMockComposition({
+      tracks: [createMockTrack({ id: 'track-1', clips: [] })],
+    }));
+    const events = handleCompositionCommand(core, compState, makeEnvelope({
+      type: 'composition:add-clip',
+      trackId: 'track-1',
+      clip: {
+        id: 'clip-xyz',
+        assetId: 'a1',
+        startTime: 0,
+        duration: 5,
+        inPoint: 0,
+        outPoint: 5,
+      },
+    }));
+    const addEvent = events.find(e => e.type === 'composition:clip-added');
+    expect(addEvent).toBeDefined();
+    expect((addEvent!.payload.clip as Clip).id).toBe('clip-xyz');
+  });
+
+  it('throws when adding a clip with a duplicate id', () => {
+    const core = coreWithAsset('a1');
+    const existingClip = createMockClip({
+      id: 'dup-clip',
+      assetId: 'a1',
+      trackId: 'track-1',
+      startTime: 0,
+      duration: 3,
+    });
+    const compState = stateWith(createMockComposition({
+      tracks: [createMockTrack({ id: 'track-1', clips: [existingClip] })],
+    }));
+    expect(() => handleCompositionCommand(core, compState, makeEnvelope({
+      type: 'composition:add-clip',
+      trackId: 'track-1',
+      clip: {
+        id: 'dup-clip',
+        assetId: 'a1',
+        startTime: 5,
+        duration: 2,
+        inPoint: 0,
+        outPoint: 2,
+      },
+    }))).toThrow(CommandValidationError);
+  });
+});
+
 describe('composition:remove-clip', () => {
   it('produces composition:clip-removed event', () => {
     const clip = createMockClip({ id: 'c1' });

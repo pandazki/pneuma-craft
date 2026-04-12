@@ -147,7 +147,14 @@ export function handleCompositionCommand(
       if (!coreState.registry.has(command.clip.assetId)) {
         throw new CommandValidationError(`Asset not found in registry: ${command.clip.assetId}`);
       }
-      const clip: Clip = { ...command.clip, id: generateId(), trackId: command.trackId };
+      const id = command.clip.id ?? generateId();
+      // Clip ids are globally unique across all tracks in the composition.
+      for (const t of composition.tracks) {
+        if (t.clips.some(c => c.id === id)) {
+          throw new CommandValidationError(`Clip already exists: ${id}`);
+        }
+      }
+      const clip: Clip = { ...command.clip, id, trackId: command.trackId };
       const addEvent = makeEvent(envelope, 'composition:clip-added', { trackId: command.trackId, clip });
       const rippleEvents = generateRippleEvents(envelope, track, clip.startTime, clip.duration);
       return [addEvent, ...rippleEvents];

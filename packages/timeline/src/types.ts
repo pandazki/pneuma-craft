@@ -84,7 +84,7 @@ export type CompositionCommand =
   | { type: 'composition:create'; settings: CompositionSettings }
   | { type: 'composition:add-track'; track: Omit<Track, 'id'> & { id?: string } }
   | { type: 'composition:remove-track'; trackId: string }
-  | { type: 'composition:add-clip'; trackId: string; clip: Omit<Clip, 'id' | 'trackId'> }
+  | { type: 'composition:add-clip'; trackId: string; clip: Omit<Clip, 'id' | 'trackId'> & { id?: string } }
   | { type: 'composition:remove-clip'; clipId: string }
   | { type: 'composition:move-clip'; clipId: string; startTime: number; trackId?: string }
   | { type: 'composition:trim-clip'; clipId: string; inPoint?: number; outPoint?: number; duration?: number }
