@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { handleCompositionCommand } from '../src/command-handler.js';
-import { createInitialState } from '@pneuma-craft/core';
+import { createInitialState, CommandValidationError } from '@pneuma-craft/core';
 import type { CommandEnvelope, PneumaCraftCoreState } from '@pneuma-craft/core';
 import type { CompositionCommand, Track, Clip } from '../src/types.js';
 import type { CompositionState } from '../src/state.js';
@@ -59,6 +59,33 @@ describe('composition:add-track', () => {
       type: 'composition:add-track',
       track: { type: 'video', name: 'V1', clips: [], muted: false, volume: 1, locked: false, visible: true },
     }))).toThrow();
+  });
+
+  it('uses the provided track id when supplied', () => {
+    const compState = stateWith(createMockComposition());
+    const events = handleCompositionCommand(coreState, compState, makeEnvelope({
+      type: 'composition:add-track',
+      track: {
+        id: 'my-track-1',
+        type: 'video', name: 'Video 1', clips: [],
+        muted: false, volume: 1, locked: false, visible: true,
+      },
+    }));
+    expect(events).toHaveLength(1);
+    expect((events[0].payload.track as Track).id).toBe('my-track-1');
+  });
+
+  it('throws when adding a track with a duplicate id', () => {
+    const existing = createMockTrack({ id: 'existing-track' });
+    const compState = stateWith(createMockComposition({ tracks: [existing] }));
+    expect(() => handleCompositionCommand(coreState, compState, makeEnvelope({
+      type: 'composition:add-track',
+      track: {
+        id: 'existing-track',
+        type: 'audio', name: 'Duplicate', clips: [],
+        muted: false, volume: 1, locked: false, visible: true,
+      },
+    }))).toThrow(CommandValidationError);
   });
 });
 

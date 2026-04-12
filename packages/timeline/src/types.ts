@@ -82,7 +82,7 @@ export interface ResolvedFrame {
 
 export type CompositionCommand =
   | { type: 'composition:create'; settings: CompositionSettings }
-  | { type: 'composition:add-track'; track: Omit<Track, 'id'> }
+  | { type: 'composition:add-track'; track: Omit<Track, 'id'> & { id?: string } }
   | { type: 'composition:remove-track'; trackId: string }
   | { type: 'composition:add-clip'; trackId: string; clip: Omit<Clip, 'id' | 'trackId'> }
   | { type: 'composition:remove-clip'; clipId: string }

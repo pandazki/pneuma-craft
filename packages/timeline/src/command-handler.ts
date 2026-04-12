@@ -122,8 +122,12 @@ export function handleCompositionCommand(
     }
 
     case 'composition:add-track': {
-      requireComposition(compState);
-      const track: Track = { ...command.track, id: generateId() };
+      const composition = requireComposition(compState);
+      const id = command.track.id ?? generateId();
+      if (composition.tracks.some(t => t.id === id)) {
+        throw new CommandValidationError(`Track already exists: ${id}`);
+      }
+      const track: Track = { ...command.track, id };
       return [makeEvent(envelope, 'composition:track-added', { track })];
     }
 
