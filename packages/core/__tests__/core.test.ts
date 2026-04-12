@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createCore } from '../src/core.js';
-import type { Asset } from '../src/types.js';
+import type { Asset, CommandEnvelope } from '../src/types.js';
 
 describe('CraftCore', () => {
   it('starts with empty state', () => {
@@ -116,6 +116,69 @@ describe('CraftCore', () => {
   it('throws on invalid command', () => {
     const core = createCore();
     expect(() => core.dispatch('human', { type: 'asset:remove', assetId: 'nonexistent' })).toThrow();
+  });
+
+  describe('dispatchEnvelope', () => {
+    it('uses the envelope timestamp for asset.createdAt', () => {
+      const core = createCore();
+      const envelope: CommandEnvelope = {
+        id: 'my-cmd-1',
+        actor: 'human',
+        timestamp: 1712934000000,
+        command: {
+          type: 'asset:register',
+          asset: {
+            id: 'a1',
+            type: 'image',
+            uri: '/x.png',
+            name: 'x',
+            metadata: {},
+          },
+        },
+      };
+      const events = core.dispatchEnvelope(envelope);
+      expect(events).toHaveLength(1);
+      expect(events[0].commandId).toBe('my-cmd-1');
+      const asset = events[0].payload.asset as Asset;
+      expect(asset.createdAt).toBe(1712934000000);
+      expect(asset.id).toBe('a1');
+    });
+
+    it('records into the undo stack the same as dispatch', () => {
+      const core = createCore();
+      core.dispatchEnvelope({
+        id: 'cmd-a',
+        actor: 'human',
+        timestamp: 1000,
+        command: {
+          type: 'asset:register',
+          asset: { id: 'a1', type: 'image', uri: '/x.png', name: 'x', metadata: {} },
+        },
+      });
+      expect(core.canUndo()).toBe(true);
+      const compensating = core.undo();
+      expect(compensating).not.toBeNull();
+      expect(compensating![0].type).toBe('asset:removed');
+      expect(core.getState().registry.has('a1')).toBe(false);
+    });
+
+    it('emits events whose ids are fresh but whose commandId matches the envelope', () => {
+      const core = createCore();
+      const events = core.dispatchEnvelope({
+        id: 'my-specific-cmd-id',
+        actor: 'agent',
+        timestamp: 2000,
+        command: {
+          type: 'asset:register',
+          asset: { type: 'video', uri: '/v.mp4', name: 'v', metadata: {} },
+        },
+      });
+      expect(events[0].commandId).toBe('my-specific-cmd-id');
+      expect(events[0].id).not.toBe('my-specific-cmd-id');
+      expect(events[0].id.length).toBeGreaterThan(0);
+      expect(events[0].actor).toBe('agent');
+      expect(events[0].timestamp).toBe(2000);
+    });
   });
 
   describe('full workflow: upload → derive → select → undo', () => {

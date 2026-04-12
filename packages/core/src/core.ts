@@ -14,6 +14,7 @@ import { createUndoManager } from './undo-manager.js';
 export interface CraftCore {
   getState(): PneumaCraftCoreState;
   dispatch(actor: Actor, command: CoreCommand): Event[];
+  dispatchEnvelope(envelope: CommandEnvelope<CoreCommand>): Event[];
   subscribe(listener: (event: Event) => void): () => void;
   undo(): Event[] | null;
   redo(): Event[] | null;
@@ -34,23 +35,29 @@ export function createCore(): CraftCore {
     }
   }
 
+  function dispatchEnvelopeImpl(envelope: CommandEnvelope<CoreCommand>): Event[] {
+    const events = handleCommand(state, envelope);
+    undoManager.record(envelope.id, events);
+    appendEvents(events);
+    return events;
+  }
+
   return {
     getState(): PneumaCraftCoreState {
       return state;
     },
 
     dispatch(actor: Actor, command: CoreCommand): Event[] {
-      const envelope: CommandEnvelope = {
+      return dispatchEnvelopeImpl({
         id: generateId(),
         actor,
         timestamp: Date.now(),
         command,
-      };
+      });
+    },
 
-      const events = handleCommand(state, envelope);
-      undoManager.record(envelope.id, events);
-      appendEvents(events);
-      return events;
+    dispatchEnvelope(envelope: CommandEnvelope<CoreCommand>): Event[] {
+      return dispatchEnvelopeImpl(envelope);
     },
 
     subscribe(listener: (event: Event) => void): () => void {
