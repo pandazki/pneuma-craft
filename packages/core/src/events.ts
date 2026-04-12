@@ -30,6 +30,15 @@ interface AssetTaggedEvent {
   };
 }
 
+interface AssetStatusChangedEvent {
+  readonly type: 'asset:status-changed';
+  readonly payload: {
+    readonly assetId: string;
+    readonly status: import('./types.js').AssetStatus;
+    readonly previousStatus: import('./types.js').AssetStatus | undefined;
+  };
+}
+
 // ── Provenance events ───────────────────────────────────────────────────
 
 interface ProvenanceRootSetEvent {
@@ -83,6 +92,7 @@ export type CoreEvent =
   | AssetRemovedEvent
   | AssetMetadataUpdatedEvent
   | AssetTaggedEvent
+  | AssetStatusChangedEvent
   | ProvenanceRootSetEvent
   | ProvenanceLinkedEvent
   | ProvenanceUnlinkedEvent

@@ -62,6 +62,15 @@ export function applyEvent(state: PneumaCraftCoreState, event: Event): PneumaCra
       return { ...state, registry };
     }
 
+    case 'asset:status-changed': {
+      const existing = state.registry.get(e.payload.assetId);
+      if (!existing) return state;
+      const updated = { ...existing, status: e.payload.status };
+      const registry = new Map(state.registry);
+      registry.set(e.payload.assetId, updated);
+      return { ...state, registry };
+    }
+
     case 'provenance:root-set': {
       const { assetId, operation, edgeId } = e.payload;
       const nodes = new Map(state.provenance.nodes);

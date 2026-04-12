@@ -71,7 +71,7 @@ export function invertCoreEvent(event: Event): Event {
       }};
     }
     default:
-      throw new Error(`Cannot invert unknown event type: ${(e as Event).type}`);
+      throw new Error(`Cannot invert unknown event type: ${(e as unknown as Event).type}`);
   }
 }
 

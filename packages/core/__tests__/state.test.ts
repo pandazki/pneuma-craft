@@ -72,6 +72,45 @@ describe('applyEvent — asset events', () => {
   });
 });
 
+describe('asset:status-changed projection', () => {
+  function stateWithAsset(asset: Asset) {
+    return applyEvent(createInitialState(), makeEvent('asset:registered', { asset }));
+  }
+
+  it('updates the status field on the existing asset', () => {
+    const state = stateWithAsset({ ...sampleAsset, status: 'generating' });
+    const nextState = applyEvent(state, {
+      id: 'evt-1', commandId: 'cmd-1', actor: 'human', timestamp: 2000,
+      type: 'asset:status-changed',
+      payload: { assetId: 'asset-1', status: 'ready', previousStatus: 'generating' },
+    });
+    const updated = nextState.registry.get('asset-1');
+    expect(updated?.status).toBe('ready');
+    expect(updated?.uri).toBe(sampleAsset.uri);
+    expect(updated?.metadata).toEqual(sampleAsset.metadata);
+  });
+
+  it('sets status on an asset that had none', () => {
+    const state = stateWithAsset(sampleAsset);
+    const nextState = applyEvent(state, {
+      id: 'evt-1', commandId: 'cmd-1', actor: 'human', timestamp: 2000,
+      type: 'asset:status-changed',
+      payload: { assetId: 'asset-1', status: 'failed', previousStatus: undefined },
+    });
+    expect(nextState.registry.get('asset-1')?.status).toBe('failed');
+  });
+
+  it('is a no-op if the asset does not exist', () => {
+    const state = createInitialState();
+    const nextState = applyEvent(state, {
+      id: 'evt-1', commandId: 'cmd-1', actor: 'human', timestamp: 2000,
+      type: 'asset:status-changed',
+      payload: { assetId: 'ghost', status: 'ready', previousStatus: undefined },
+    });
+    expect(nextState).toBe(state);
+  });
+});
+
 describe('applyEvent — provenance events', () => {
   it('provenance:root-set creates node and edge', () => {
     let state = createInitialState();
