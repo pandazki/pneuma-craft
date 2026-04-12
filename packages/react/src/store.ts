@@ -1,6 +1,7 @@
 import { createStore } from 'zustand/vanilla';
 import type {
   Actor,
+  CommandEnvelope,
   CoreCommand,
   Event,
   PneumaCraftCoreState,
@@ -41,6 +42,7 @@ export interface PneumaCraftStore {
 
   // Actions
   dispatch: (actor: Actor, command: CoreCommand | CompositionCommand) => Event[];
+  dispatchEnvelope: (envelope: CommandEnvelope<CoreCommand | CompositionCommand>) => Event[];
   undo: () => Event[] | null;
   redo: () => Event[] | null;
   play: () => void;
@@ -205,6 +207,14 @@ export function createPneumaCraftStore(
     // Actions
     dispatch(actor: Actor, command: CoreCommand | CompositionCommand): Event[] {
       const events = timelineCore.dispatch(actor, command);
+      set(syncDomainState());
+      return events;
+    },
+
+    dispatchEnvelope(
+      envelope: CommandEnvelope<CoreCommand | CompositionCommand>,
+    ): Event[] {
+      const events = timelineCore.dispatchEnvelope(envelope);
       set(syncDomainState());
       return events;
     },

@@ -182,6 +182,30 @@ describe('createPneumaCraftStore', () => {
     expect(store.getState().coreState.registry.size).toBe(1);
   });
 
+  it('dispatchEnvelope propagates caller-supplied timestamps', () => {
+    const resolver = createMockAssetResolver();
+    const store = createPneumaCraftStore(resolver);
+
+    store.getState().dispatchEnvelope({
+      id: 'test-envelope',
+      actor: 'human',
+      timestamp: 1712934000000,
+      command: {
+        type: 'asset:register',
+        asset: {
+          id: 'a1',
+          type: 'image',
+          uri: '/a1.png',
+          name: 'x',
+          metadata: {},
+        },
+      },
+    });
+
+    const asset = store.getState().coreState.registry.get('a1');
+    expect(asset?.createdAt).toBe(1712934000000);
+  });
+
   it('stores assetResolver reference', () => {
     const resolver = createMockAssetResolver();
     const store = createPneumaCraftStore(resolver);
