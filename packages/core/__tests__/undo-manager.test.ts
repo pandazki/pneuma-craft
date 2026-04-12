@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createUndoManager } from '../src/undo-manager.js';
+import { createUndoManager, invertCoreEvent } from '../src/undo-manager.js';
 import { createInitialState, applyEvent } from '../src/state.js';
 import { handleCommand } from '../src/command-handler.js';
 import type { Event, CommandEnvelope, Asset } from '../src/types.js';
@@ -178,6 +178,40 @@ describe('UndoManager', () => {
       const redoEvents = manager.redo()!;
       const state3 = redoEvents.reduce(applyEvent, state2);
       expect(state3.registry.size).toBe(1);
+    });
+  });
+});
+
+describe('invertCoreEvent — asset:status-changed', () => {
+  it('swaps status and previousStatus', () => {
+    const original: Event = {
+      id: 'evt-1', commandId: 'cmd-1', actor: 'human', timestamp: 1000,
+      type: 'asset:status-changed',
+      payload: { assetId: 'asset-1', status: 'ready', previousStatus: 'generating' },
+    };
+    const inverted = invertCoreEvent(original);
+    expect(inverted.type).toBe('asset:status-changed');
+    expect(inverted.payload).toMatchObject({
+      assetId: 'asset-1',
+      status: 'generating',
+      previousStatus: 'ready',
+    });
+    expect(inverted.commandId).toBe('cmd-1'); // preserved
+    expect(inverted.id).not.toBe('evt-1'); // fresh id
+  });
+
+  it('inverts cleanly when previousStatus was undefined', () => {
+    const original: Event = {
+      id: 'evt-1', commandId: 'cmd-1', actor: 'agent', timestamp: 1000,
+      type: 'asset:status-changed',
+      payload: { assetId: 'asset-1', status: 'failed', previousStatus: undefined },
+    };
+    const inverted = invertCoreEvent(original);
+    // Inverting "undefined → failed" produces "failed → undefined"
+    expect(inverted.payload).toMatchObject({
+      assetId: 'asset-1',
+      status: undefined,
+      previousStatus: 'failed',
     });
   });
 });

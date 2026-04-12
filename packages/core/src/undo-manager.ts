@@ -42,6 +42,13 @@ export function invertCoreEvent(event: Event): Event {
         assetId: e.payload.assetId, tags: e.payload.previousTags, previousTags: e.payload.tags,
       }};
     }
+    case 'asset:status-changed': {
+      return { ...base, type: 'asset:status-changed', payload: {
+        assetId: e.payload.assetId,
+        status: e.payload.previousStatus,
+        previousStatus: e.payload.status,
+      }};
+    }
     case 'provenance:root-set': {
       const { assetId, operation, edgeId } = e.payload;
       return { ...base, type: 'provenance:unlinked', payload: {
@@ -71,7 +78,7 @@ export function invertCoreEvent(event: Event): Event {
       }};
     }
     default:
-      throw new Error(`Cannot invert unknown event type: ${(e as unknown as Event).type}`);
+      throw new Error(`Cannot invert unknown event type: ${(e as Event).type}`);
   }
 }
 
