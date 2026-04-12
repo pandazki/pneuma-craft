@@ -45,6 +45,7 @@ export function createMockTrack(overrides: Partial<Track> = {}): Track {
     muted: false,
     volume: 1,
     locked: false,
+    visible: true,
     ...overrides,
   };
 }

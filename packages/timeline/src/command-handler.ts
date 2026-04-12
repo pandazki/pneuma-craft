@@ -251,6 +251,80 @@ export function handleCompositionCommand(
       })];
     }
 
+    case 'composition:toggle-track-mute': {
+      const composition = requireComposition(compState);
+      const track = requireTrack(composition, command.trackId);
+      return [makeEvent(envelope, 'composition:track-mute-toggled', {
+        trackId: command.trackId,
+        muted: !track.muted,
+        previousMuted: track.muted,
+      })];
+    }
+
+    case 'composition:toggle-track-lock': {
+      const composition = requireComposition(compState);
+      const track = requireTrack(composition, command.trackId);
+      return [makeEvent(envelope, 'composition:track-lock-toggled', {
+        trackId: command.trackId,
+        locked: !track.locked,
+        previousLocked: track.locked,
+      })];
+    }
+
+    case 'composition:toggle-track-visibility': {
+      const composition = requireComposition(compState);
+      const track = requireTrack(composition, command.trackId);
+      return [makeEvent(envelope, 'composition:track-visibility-toggled', {
+        trackId: command.trackId,
+        visible: !track.visible,
+        previousVisible: track.visible,
+      })];
+    }
+
+    case 'composition:duplicate-clip': {
+      const composition = requireComposition(compState);
+      const { clip, track } = requireClip(composition, command.clipId);
+      requireTrackNotLocked(track);
+      const newClip: Clip = {
+        ...clip,
+        id: generateId(),
+        startTime: clip.startTime + clip.duration,
+      };
+      const addEvent = makeEvent(envelope, 'composition:clip-duplicated', {
+        sourceClipId: command.clipId,
+        clip: newClip,
+        trackId: track.id,
+      });
+      const rippleEvents = generateRippleEvents(
+        envelope, track, newClip.startTime, newClip.duration, command.clipId,
+      );
+      return [addEvent, ...rippleEvents];
+    }
+
+    case 'composition:rebind-clip': {
+      const composition = requireComposition(compState);
+      const { clip, track } = requireClip(composition, command.clipId);
+      requireTrackNotLocked(track);
+      if (!coreState.registry.has(command.assetId)) {
+        throw new CommandValidationError(`Asset not found in registry: ${command.assetId}`);
+      }
+      return [makeEvent(envelope, 'composition:clip-rebound', {
+        clipId: command.clipId,
+        assetId: command.assetId,
+        previousAssetId: clip.assetId,
+      })];
+    }
+
+    case 'composition:rename-track': {
+      const composition = requireComposition(compState);
+      const track = requireTrack(composition, command.trackId);
+      return [makeEvent(envelope, 'composition:track-renamed', {
+        trackId: command.trackId,
+        name: command.name,
+        previousName: track.name,
+      })];
+    }
+
     default:
       throw new CommandValidationError(`Unknown composition command: ${(command as CompositionCommand).type}`);
   }

@@ -226,7 +226,7 @@ describe('domain state sync', () => {
     // Add a video track
     store.getState().dispatch('human', {
       type: 'composition:add-track',
-      track: { type: 'video', name: 'Video 1', clips: [], muted: false, volume: 1, locked: false },
+      track: { type: 'video', name: 'Video 1', clips: [], muted: false, volume: 1, locked: false, visible: true },
     });
 
     const trackId = store.getState().composition!.tracks[0].id;
@@ -255,7 +255,7 @@ describe('domain state sync', () => {
     // Add a track
     store.getState().dispatch('human', {
       type: 'composition:add-track',
-      track: { type: 'video', name: 'Video 1', clips: [], muted: false, volume: 1, locked: false },
+      track: { type: 'video', name: 'Video 1', clips: [], muted: false, volume: 1, locked: false, visible: true },
     });
 
     expect(store.getState().composition!.tracks.length).toBe(1);
@@ -405,7 +405,7 @@ describe('playback engine lifecycle', () => {
     // Add track and clip to have non-zero duration
     store.getState().dispatch('human', {
       type: 'composition:add-track',
-      track: { type: 'video', name: 'Video 1', clips: [], muted: false, volume: 1, locked: false },
+      track: { type: 'video', name: 'Video 1', clips: [], muted: false, volume: 1, locked: false, visible: true },
     });
     const trackId = store.getState().composition!.tracks[0].id;
     store.getState().dispatch('human', {

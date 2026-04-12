@@ -69,6 +69,36 @@ interface CompositionTracksReorderedEvent {
   };
 }
 
+interface CompositionTrackMuteToggledEvent {
+  readonly type: 'composition:track-mute-toggled';
+  readonly payload: { readonly trackId: string; readonly muted: boolean; readonly previousMuted: boolean };
+}
+
+interface CompositionTrackLockToggledEvent {
+  readonly type: 'composition:track-lock-toggled';
+  readonly payload: { readonly trackId: string; readonly locked: boolean; readonly previousLocked: boolean };
+}
+
+interface CompositionTrackVisibilityToggledEvent {
+  readonly type: 'composition:track-visibility-toggled';
+  readonly payload: { readonly trackId: string; readonly visible: boolean; readonly previousVisible: boolean };
+}
+
+interface CompositionClipDuplicatedEvent {
+  readonly type: 'composition:clip-duplicated';
+  readonly payload: { readonly sourceClipId: string; readonly clip: Clip; readonly trackId: string };
+}
+
+interface CompositionClipReboundEvent {
+  readonly type: 'composition:clip-rebound';
+  readonly payload: { readonly clipId: string; readonly assetId: string; readonly previousAssetId: string };
+}
+
+interface CompositionTrackRenamedEvent {
+  readonly type: 'composition:track-renamed';
+  readonly payload: { readonly trackId: string; readonly name: string; readonly previousName: string };
+}
+
 export type CompositionEvent =
   | CompositionCreatedEvent
   | CompositionTrackAddedEvent
@@ -78,7 +108,13 @@ export type CompositionEvent =
   | CompositionClipMovedEvent
   | CompositionClipTrimmedEvent
   | CompositionClipSplitEvent
-  | CompositionTracksReorderedEvent;
+  | CompositionTracksReorderedEvent
+  | CompositionTrackMuteToggledEvent
+  | CompositionTrackLockToggledEvent
+  | CompositionTrackVisibilityToggledEvent
+  | CompositionClipDuplicatedEvent
+  | CompositionClipReboundEvent
+  | CompositionTrackRenamedEvent;
 
 export function asCompositionEvent(
   event: { type: string; payload: Record<string, unknown> },

@@ -36,7 +36,7 @@ describe('TimelineCore', () => {
     });
     tl.dispatch('human', {
       type: 'composition:add-track',
-      track: { type: 'video', name: 'V1', clips: [], muted: false, volume: 1, locked: false },
+      track: { type: 'video', name: 'V1', clips: [], muted: false, volume: 1, locked: false, visible: true },
     });
     expect(tl.getComposition()!.tracks).toHaveLength(1);
     tl.undo();
@@ -79,7 +79,7 @@ describe('TimelineCore', () => {
     });
     tl.dispatch('human', {
       type: 'composition:add-track',
-      track: { type: 'video', name: 'V1', clips: [], muted: false, volume: 1, locked: false },
+      track: { type: 'video', name: 'V1', clips: [], muted: false, volume: 1, locked: false, visible: true },
     });
     const trackId = tl.getComposition()!.tracks[0].id;
 
@@ -118,7 +118,7 @@ describe('TimelineCore', () => {
 
       tl.dispatch('human', {
         type: 'composition:add-track',
-        track: { type: 'video', name: 'Main', clips: [], muted: false, volume: 1, locked: false },
+        track: { type: 'video', name: 'Main', clips: [], muted: false, volume: 1, locked: false, visible: true },
       });
       const trackId = tl.getComposition()!.tracks[0].id;
 

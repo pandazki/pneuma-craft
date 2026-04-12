@@ -18,6 +18,7 @@ export interface Track {
   readonly muted: boolean;
   readonly volume: number;
   readonly locked: boolean;
+  readonly visible: boolean;
 }
 
 export interface Clip {
@@ -88,4 +89,10 @@ export type CompositionCommand =
   | { type: 'composition:move-clip'; clipId: string; startTime: number; trackId?: string }
   | { type: 'composition:trim-clip'; clipId: string; inPoint?: number; outPoint?: number; duration?: number }
   | { type: 'composition:split-clip'; clipId: string; time: number }
-  | { type: 'composition:reorder-tracks'; trackIds: string[] };
+  | { type: 'composition:reorder-tracks'; trackIds: string[] }
+  | { type: 'composition:toggle-track-mute'; trackId: string }
+  | { type: 'composition:toggle-track-lock'; trackId: string }
+  | { type: 'composition:toggle-track-visibility'; trackId: string }
+  | { type: 'composition:duplicate-clip'; clipId: string }
+  | { type: 'composition:rebind-clip'; clipId: string; assetId: string }
+  | { type: 'composition:rename-track'; trackId: string; name: string };

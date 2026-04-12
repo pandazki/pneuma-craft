@@ -68,6 +68,46 @@ export function invertCompositionEvent(event: Event): Event {
         previousTrackIds: e.payload.trackIds,
       }};
 
+    case 'composition:track-mute-toggled':
+      return { ...base, type: 'composition:track-mute-toggled', payload: {
+        trackId: e.payload.trackId,
+        muted: e.payload.previousMuted,
+        previousMuted: e.payload.muted,
+      }};
+
+    case 'composition:track-lock-toggled':
+      return { ...base, type: 'composition:track-lock-toggled', payload: {
+        trackId: e.payload.trackId,
+        locked: e.payload.previousLocked,
+        previousLocked: e.payload.locked,
+      }};
+
+    case 'composition:track-visibility-toggled':
+      return { ...base, type: 'composition:track-visibility-toggled', payload: {
+        trackId: e.payload.trackId,
+        visible: e.payload.previousVisible,
+        previousVisible: e.payload.visible,
+      }};
+
+    case 'composition:clip-duplicated':
+      return { ...base, type: 'composition:clip-removed', payload: {
+        clipId: e.payload.clip.id, clip: e.payload.clip, trackId: e.payload.trackId,
+      }};
+
+    case 'composition:clip-rebound':
+      return { ...base, type: 'composition:clip-rebound', payload: {
+        clipId: e.payload.clipId,
+        assetId: e.payload.previousAssetId,
+        previousAssetId: e.payload.assetId,
+      }};
+
+    case 'composition:track-renamed':
+      return { ...base, type: 'composition:track-renamed', payload: {
+        trackId: e.payload.trackId,
+        name: e.payload.previousName,
+        previousName: e.payload.name,
+      }};
+
     default:
       throw new Error(`Cannot invert unknown composition event: ${(e as Event).type}`);
   }

@@ -113,6 +113,72 @@ export function applyCompositionEvent(
       return { composition: { ...comp, tracks: reordered } };
     }
 
+    case 'composition:track-mute-toggled': {
+      const comp = state.composition!;
+      return {
+        composition: {
+          ...comp,
+          tracks: comp.tracks.map(t =>
+            t.id === e.payload.trackId ? { ...t, muted: e.payload.muted } : t,
+          ),
+        },
+      };
+    }
+
+    case 'composition:track-lock-toggled': {
+      const comp = state.composition!;
+      return {
+        composition: {
+          ...comp,
+          tracks: comp.tracks.map(t =>
+            t.id === e.payload.trackId ? { ...t, locked: e.payload.locked } : t,
+          ),
+        },
+      };
+    }
+
+    case 'composition:track-visibility-toggled': {
+      const comp = state.composition!;
+      return {
+        composition: {
+          ...comp,
+          tracks: comp.tracks.map(t =>
+            t.id === e.payload.trackId ? { ...t, visible: e.payload.visible } : t,
+          ),
+        },
+      };
+    }
+
+    case 'composition:clip-duplicated': {
+      const comp = state.composition!;
+      return {
+        composition: recomputeDuration(
+          addClipToTrack(comp, e.payload.trackId, e.payload.clip),
+        ),
+      };
+    }
+
+    case 'composition:clip-rebound': {
+      const comp = state.composition!;
+      return {
+        composition: updateClipInComposition(comp, e.payload.clipId, clip => ({
+          ...clip, assetId: e.payload.assetId,
+        })),
+      };
+    }
+
+    case 'composition:track-renamed': {
+      const comp = state.composition!;
+      return {
+        composition: {
+          ...comp,
+          tracks: comp.tracks.map(t =>
+            t.id === e.payload.trackId ? { ...t, name: e.payload.name } : t,
+          ),
+        },
+      };
+    }
+
     // Handle undo of split (composition:clip-unsplit)
     // This is not in the CompositionEvent union — it's an internal compensation event
     default: {

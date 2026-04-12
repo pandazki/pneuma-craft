@@ -48,7 +48,7 @@ describe('composition:add-track', () => {
     const compState = stateWith(createMockComposition());
     const events = handleCompositionCommand(coreState, compState, makeEnvelope({
       type: 'composition:add-track',
-      track: { type: 'video', name: 'V1', clips: [], muted: false, volume: 1, locked: false },
+      track: { type: 'video', name: 'V1', clips: [], muted: false, volume: 1, locked: false, visible: true },
     }));
     expect(events[0].type).toBe('composition:track-added');
     expect((events[0].payload.track as Track).id).toBeDefined();
@@ -57,7 +57,7 @@ describe('composition:add-track', () => {
   it('throws if no composition', () => {
     expect(() => handleCompositionCommand(coreState, emptyCompState, makeEnvelope({
       type: 'composition:add-track',
-      track: { type: 'video', name: 'V1', clips: [], muted: false, volume: 1, locked: false },
+      track: { type: 'video', name: 'V1', clips: [], muted: false, volume: 1, locked: false, visible: true },
     }))).toThrow();
   });
 });
