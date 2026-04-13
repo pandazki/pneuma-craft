@@ -18,10 +18,20 @@ import { createAudioScheduler } from './audio-scheduler.js';
 
 export interface PlaybackEngineOptions {
   compositorType?: CompositorType;
+  /** Max time a single frame decode may block before the loop skips it. Default 1000ms. */
+  decodeTimeoutMs?: number;
 }
+
+/** Default per-frame decode timeout. Decodes exceeding this are logged and skipped. */
+const DEFAULT_DECODE_TIMEOUT_MS = 1000;
+
+/** Enables verbose rAF-loop logs for debugging playback stalls. */
+const DEBUG_LOOP = typeof globalThis !== 'undefined'
+  && (globalThis as { __PNEUMA_CRAFT_PLAYBACK_DEBUG__?: boolean }).__PNEUMA_CRAFT_PLAYBACK_DEBUG__ === true;
 
 export function createPlaybackEngine(options?: PlaybackEngineOptions): PlaybackEngine {
   const compositorType = options?.compositorType ?? 'canvas2d';
+  const decodeTimeoutMs = options?.decodeTimeoutMs ?? DEFAULT_DECODE_TIMEOUT_MS;
 
   let _state: PlaybackState = 'idle';
   let _playbackRate = 1;
@@ -38,6 +48,10 @@ export function createPlaybackEngine(options?: PlaybackEngineOptions): PlaybackE
 
   // rAF handle
   let _rafId: number | null = null;
+
+  // True while a frame decode is awaiting — prevents stacking concurrent renders
+  // when one decode runs slower than a rAF tick.
+  let _frameInFlight = false;
 
   // Seek ID counter for discarding stale paused-seek renders
   let _seekId = 0;
@@ -72,6 +86,7 @@ export function createPlaybackEngine(options?: PlaybackEngineOptions): PlaybackE
       cancelAnimationFrame(_rafId);
       _rafId = null;
     }
+    _frameInFlight = false;
     _frameRenderer?.destroy();
     _clock?.destroy();
     _audioScheduler?.destroy();
@@ -88,36 +103,84 @@ export function createPlaybackEngine(options?: PlaybackEngineOptions): PlaybackE
   function startRafLoop(): void {
     if (_rafId !== null) return;
 
+    // The loop is designed so that time updates and rAF scheduling are INDEPENDENT
+    // of frame decoding. This means:
+    //   1. If a decode hangs or is slow, the clock/slider still advances and pause/seek
+    //      remain responsive.
+    //   2. At most one decode runs at a time (no concurrent pile-up).
+    //   3. A decode exceeding `decodeTimeoutMs` is logged and skipped so the loop can
+    //      recover from a stuck codec packet pump.
+    let lastLoggedState: 'render' | 'skip-inflight' | null = null;
+    const logStateChange = (state: 'render' | 'skip-inflight', time: number, extra?: string): void => {
+      if (!DEBUG_LOOP) return;
+      if (lastLoggedState === state) return;
+      lastLoggedState = state;
+      console.log(`[engine] ${state} @ t=${time.toFixed(3)}${extra ? ' ' + extra : ''}`);
+    };
+
     const loop = (): void => {
+      _rafId = null;
       if (_state !== 'playing' || !_clock || !_frameRenderer || !_composition) return;
 
       const time = _clock.currentTime;
-      const driftMs = _clock.driftMs;
-      const frameDuration = 1 / (_composition.settings.fps || 30);
 
-      // Skip frame rendering if audio is too far ahead (drift compensation)
-      if (driftMs > frameDuration * 1000) {
-        _rafId = requestAnimationFrame(loop);
+      // Emit time update up-front — consumers see the clock tick regardless of decode state.
+      emitTimeUpdate(time);
+
+      // End-of-timeline check.
+      if (!_clock.loop && time >= _composition.duration) {
+        engine.pause();
         return;
       }
 
-      _frameRenderer.renderFrame(_composition, time).then(frame => {
-        if (_state !== 'playing' || !_clock) return;
+      // Always schedule the next rAF synchronously so timing is decoupled from decode.
+      _rafId = requestAnimationFrame(loop);
 
-        _clock.reportVideoTime(time);
+      // Skip this tick's render if the previous decode is still in flight — back-pressure
+      // so slow decodes don't stack concurrent calls. The watchdog below recovers if a
+      // decode never resolves; we never get stuck.
+      //
+      // NOTE: we intentionally do NOT skip based on _clock.driftMs. A prior implementation
+      // did, which caused a deadlock: when the first decode ran long (e.g., cold-start
+      // fetch of a 50 MB blob), reportVideoTime captured a large stale-drift value, then
+      // every subsequent tick skipped on drift, so reportVideoTime never ran again, and
+      // drift was frozen at the stale value forever. The clock is the source of truth;
+      // each render just targets its current value, which naturally catches up.
+      if (_frameInFlight) {
+        logStateChange('skip-inflight', time);
+        return;
+      }
+
+      logStateChange('render', time);
+
+      // Kick off the decode. A watchdog timer clears _frameInFlight so the loop can
+      // recover if renderFrame never resolves. We attach .then directly (no Promise.race)
+      // to preserve the microtask profile — emitFrameRendered fires on the same tick
+      // that renderFrame resolves.
+      _frameInFlight = true;
+      const clockRef = _clock;
+      const compositionRef = _composition;
+      let timedOut = false;
+      const timeoutId = setTimeout(() => {
+        timedOut = true;
+        _frameInFlight = false;
+        console.warn(
+          `[PlaybackEngine] decode timeout at t=${time.toFixed(3)}s (>${decodeTimeoutMs}ms) — skipping frame`,
+        );
+      }, decodeTimeoutMs);
+
+      _frameRenderer.renderFrame(compositionRef, time).then(frame => {
+        clearTimeout(timeoutId);
+        if (timedOut) return;
+        _frameInFlight = false;
+        if (_state !== 'playing' || _clock !== clockRef) return;
+        clockRef.reportVideoTime(time);
         emitFrameRendered(frame);
-        emitTimeUpdate(time);
-
-        // Check for end of timeline
-        if (!_clock.loop && _composition && time >= _composition.duration) {
-          engine.pause();
-          return;
-        }
-
-        _rafId = requestAnimationFrame(loop);
       }).catch(err => {
+        clearTimeout(timeoutId);
+        if (timedOut) return;
+        _frameInFlight = false;
         console.error('[PlaybackEngine] render error:', err);
-        _rafId = requestAnimationFrame(loop);
       });
     };
 
@@ -129,6 +192,7 @@ export function createPlaybackEngine(options?: PlaybackEngineOptions): PlaybackE
       cancelAnimationFrame(_rafId);
       _rafId = null;
     }
+    _frameInFlight = false;
   }
 
   const engine: PlaybackEngine = {

@@ -24,14 +24,30 @@ export function PneumaCraftProvider({
   assetResolver,
   compositorType = 'auto',
 }: PneumaCraftProviderProps) {
+  // The store holds expensive mutable state (audio context, decoder cache, timeline events).
+  // We must preserve it across React 19 StrictMode's intentional mount → cleanup → remount
+  // cycle — otherwise any data the consumer wrote (seed, load, dispatch) between mount and
+  // cleanup is lost. We achieve this by deferring destroy() to the next macrotask; if a
+  // remount happens before it fires, we cancel it.
   const storeRef = useRef<PneumaCraftStoreApi | null>(null);
+  const pendingDestroyRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   if (!storeRef.current) {
     storeRef.current = createPneumaCraftStore(assetResolver, compositorType);
   }
 
   useEffect(() => {
+    // Cancel a pending destroy from a previous StrictMode cleanup.
+    if (pendingDestroyRef.current !== null) {
+      clearTimeout(pendingDestroyRef.current);
+      pendingDestroyRef.current = null;
+    }
     return () => {
-      storeRef.current?.getState().destroy();
+      pendingDestroyRef.current = setTimeout(() => {
+        storeRef.current?.getState().destroy();
+        storeRef.current = null;
+        pendingDestroyRef.current = null;
+      }, 0);
     };
   }, []);
 

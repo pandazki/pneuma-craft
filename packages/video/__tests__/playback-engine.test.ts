@@ -401,6 +401,88 @@ describe('createPlaybackEngine', () => {
     expect(frames.length).toBeGreaterThanOrEqual(1);
   });
 
+  // ── 8b. Slow-first-decode recovery ────────────────────────────────
+  //
+  // Regression: a prior rAF loop skipped renders whenever _clock.driftMs exceeded one
+  // frame duration. When the first decode ran long (cold-start fetch of a large blob),
+  // reportVideoTime captured a large stale drift, and every subsequent tick skipped on
+  // that stale value. Since no render ran, reportVideoTime never fired again — drift
+  // stayed frozen forever and playback was deadlocked after a single frame.
+  //
+  // The fix: remove the drift-skip entirely. _frameInFlight already back-pressures the
+  // loop during a slow decode, and the watchdog recovers if a decode never resolves.
+  // This test fails on the buggy loop because it would freeze after the first frame.
+  it('recovers from a slow first decode and keeps rendering subsequent frames', async () => {
+    const engine = createPlaybackEngine();
+    const frames: RenderedFrame[] = [];
+    const times: number[] = [];
+    engine.onFrameRendered(f => frames.push(f));
+    engine.onTimeUpdate(t => times.push(t));
+
+    // First renderFrame stays pending until we resolve it manually (simulates a slow
+    // cold-start decode). Subsequent calls resolve synchronously.
+    let resolveFirst!: (frame: RenderedFrame) => void;
+    const firstPending = new Promise<RenderedFrame>(resolve => { resolveFirst = resolve; });
+    let callCount = 0;
+    let mockTime = 0;
+    (mockFrameRenderer.renderFrame as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) return firstPending;
+      return Promise.resolve({
+        image: createMockImageBitmap(),
+        time: mockTime,
+        width: 1920,
+        height: 1080,
+      });
+    });
+
+    await engine.load(composition, resolver);
+
+    // Now that the clock subsystem is wired up, override its getters to simulate a
+    // real advancing audio-context time source and a large stale drift (which would
+    // have triggered the old drift-skip deadlock).
+    Object.defineProperty(latestMockClock, 'currentTime', {
+      configurable: true,
+      get: () => mockTime,
+    });
+    Object.defineProperty(latestMockClock, 'driftMs', {
+      configurable: true,
+      get: () => 500, // way above any frame duration threshold
+    });
+
+    engine.play();
+
+    // Tick a few times — the first render is still pending.
+    await flushRaf();
+    mockTime = 0.1;
+    await flushRaf();
+    mockTime = 0.2;
+    await flushRaf();
+    // Time updates flow independently of decode state.
+    expect(times.length).toBeGreaterThanOrEqual(2);
+    expect(frames.length).toBe(0); // first render still pending
+
+    // Resolve the slow first decode.
+    resolveFirst({
+      image: createMockImageBitmap(),
+      time: 0,
+      width: 1920,
+      height: 1080,
+    });
+    await Promise.resolve(); // flush microtask
+    await Promise.resolve();
+
+    // Subsequent ticks must produce frames — drift is still 500ms (stale), but the loop
+    // no longer skips on drift. The old buggy loop would stay frozen here.
+    mockTime = 0.3;
+    await flushRaf();
+    mockTime = 0.4;
+    await flushRaf();
+
+    expect(frames.length).toBeGreaterThanOrEqual(2);
+    expect(callCount).toBeGreaterThanOrEqual(2);
+  });
+
   // ── 9. destroy ─────────────────────────────────────────────────────
 
   it('destroy cleans up and returns to idle', async () => {

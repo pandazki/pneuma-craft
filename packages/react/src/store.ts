@@ -311,6 +311,7 @@ export function createPneumaCraftStore(
     },
 
     destroy(): void {
+      if (destroyed) return;
       destroyed = true;
       engines.playback?.destroy();
       engines.playback = null;
