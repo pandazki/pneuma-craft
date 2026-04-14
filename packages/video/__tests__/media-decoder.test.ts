@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createMockCanvasImageSource, createMockAudioBuffer } from './helpers.js';
+import { createMockCanvasImageSource, createMockAudioBuffer, createMockAudioContext } from './helpers.js';
 
 // ── MediaBunny Mock Setup ──────────────────────────────────────────────
 
@@ -22,8 +22,17 @@ const mockCanvasSink = {
 };
 
 const mockAudioBuffer = createMockAudioBuffer(10, 48000);
+// Simulate mediabunny's AudioBufferSink.buffers() async iterator yielding a
+// sequence of small chunks that the decoder concatenates.
+const makeSinkChunks = () => [
+  { buffer: createMockAudioBuffer(5, 48000) },
+  { buffer: createMockAudioBuffer(5, 48000) },
+];
 const mockAudioBufferSink = {
   getBuffer: vi.fn().mockResolvedValue({ buffer: mockAudioBuffer, timestamp: 0, duration: 10 }),
+  buffers: vi.fn().mockImplementation(async function* () {
+    for (const c of makeSinkChunks()) yield c;
+  }),
 };
 
 const mockInput = {
@@ -69,7 +78,8 @@ describe('createMediaDecoder', () => {
 
   it('creates a decoder with an asset resolver', () => {
     const resolver = createMockResolver();
-    const decoder = createMediaDecoder(resolver);
+    const audioContext = createMockAudioContext();
+    const decoder = createMediaDecoder(resolver, audioContext);
     expect(decoder).toBeDefined();
     expect(typeof decoder.decodeVideoFrame).toBe('function');
     expect(typeof decoder.decodeAudio).toBe('function');
@@ -79,7 +89,8 @@ describe('createMediaDecoder', () => {
 
   it('decodes a video frame — calls fetchBlob, creates Input+CanvasSink, returns canvas', async () => {
     const resolver = createMockResolver();
-    const decoder = createMediaDecoder(resolver);
+    const audioContext = createMockAudioContext();
+    const decoder = createMediaDecoder(resolver, audioContext);
 
     const result = await decoder.decodeVideoFrame('asset-1', 2.5, 1920, 1080);
 
@@ -93,7 +104,8 @@ describe('createMediaDecoder', () => {
 
   it('caches Input per assetId — fetchBlob called only once for repeated decodes of same asset', async () => {
     const resolver = createMockResolver();
-    const decoder = createMediaDecoder(resolver);
+    const audioContext = createMockAudioContext();
+    const decoder = createMediaDecoder(resolver, audioContext);
 
     await decoder.decodeVideoFrame('asset-1', 0, 1920, 1080);
     await decoder.decodeVideoFrame('asset-1', 1, 1920, 1080);
@@ -105,7 +117,8 @@ describe('createMediaDecoder', () => {
 
   it('creates separate Input for different assets', async () => {
     const resolver = createMockResolver();
-    const decoder = createMediaDecoder(resolver);
+    const audioContext = createMockAudioContext();
+    const decoder = createMediaDecoder(resolver, audioContext);
 
     await decoder.decodeVideoFrame('asset-1', 0, 1920, 1080);
     await decoder.decodeVideoFrame('asset-2', 0, 1920, 1080);
@@ -116,35 +129,60 @@ describe('createMediaDecoder', () => {
     expect(Input).toHaveBeenCalledTimes(2);
   });
 
-  it('decodes audio to AudioBuffer', async () => {
+  it('decodes audio via fast path (audioContext.decodeAudioData) when blob is a standalone audio file', async () => {
     const resolver = createMockResolver();
-    const decoder = createMediaDecoder(resolver);
+    const audioContext = createMockAudioContext();
+    const fastPathBuffer = createMockAudioBuffer(30, 48000);
+    (audioContext.decodeAudioData as ReturnType<typeof vi.fn>).mockResolvedValueOnce(fastPathBuffer);
+    const decoder = createMediaDecoder(resolver, audioContext);
 
     const result = await decoder.decodeAudio('asset-1');
 
     expect(resolver.fetchBlob).toHaveBeenCalledWith('asset-1');
-    expect(mockInput.getPrimaryAudioTrack).toHaveBeenCalled();
-    expect(AudioBufferSink).toHaveBeenCalledWith(mockAudioTrack);
-    expect(mockAudioBufferSink.getBuffer).toHaveBeenCalledWith(0);
-    expect(result).toBe(mockAudioBuffer);
+    expect(audioContext.decodeAudioData).toHaveBeenCalledTimes(1);
+    // Fast path must return the full-file buffer without touching MediaBunny.
+    expect(AudioBufferSink).not.toHaveBeenCalled();
+    expect(result).toBe(fastPathBuffer);
   });
 
-  it('caches decoded AudioBuffer — getBuffer called only once for repeated decodeAudio calls', async () => {
+  it('falls back to AudioBufferSink.buffers() iteration when decodeAudioData rejects', async () => {
     const resolver = createMockResolver();
-    const decoder = createMediaDecoder(resolver);
+    const audioContext = createMockAudioContext();
+    // default mock: decodeAudioData rejects → fallback kicks in
+    const decoder = createMediaDecoder(resolver, audioContext);
+
+    const result = await decoder.decodeAudio('asset-1');
+
+    expect(audioContext.decodeAudioData).toHaveBeenCalledTimes(1);
+    expect(AudioBufferSink).toHaveBeenCalledWith(mockAudioTrack);
+    // Must iterate the full track (not just getBuffer(0)).
+    expect(mockAudioBufferSink.buffers).toHaveBeenCalled();
+    expect(audioContext.createBuffer).toHaveBeenCalled();
+    // Concatenated buffer length = sum of chunk lengths (two 5s chunks at 48k)
+    expect(result.length).toBe(5 * 48000 + 5 * 48000);
+  });
+
+  it('caches decoded AudioBuffer — repeat decodeAudio calls hit cache', async () => {
+    const resolver = createMockResolver();
+    const audioContext = createMockAudioContext();
+    const fastPathBuffer = createMockAudioBuffer(30, 48000);
+    (audioContext.decodeAudioData as ReturnType<typeof vi.fn>).mockResolvedValue(fastPathBuffer);
+    const decoder = createMediaDecoder(resolver, audioContext);
 
     const result1 = await decoder.decodeAudio('asset-1');
     const result2 = await decoder.decodeAudio('asset-1');
     const result3 = await decoder.decodeAudio('asset-1');
 
-    expect(mockAudioBufferSink.getBuffer).toHaveBeenCalledTimes(1);
+    // decodeAudioData runs once; subsequent calls return cached buffer.
+    expect(audioContext.decodeAudioData).toHaveBeenCalledTimes(1);
     expect(result1).toBe(result2);
     expect(result2).toBe(result3);
   });
 
   it('gets media info with correct duration, dimensions, fps, codecs', async () => {
     const resolver = createMockResolver();
-    const decoder = createMediaDecoder(resolver);
+    const audioContext = createMockAudioContext();
+    const decoder = createMediaDecoder(resolver, audioContext);
 
     const info = await decoder.getMediaInfo('asset-1');
 
@@ -162,7 +200,8 @@ describe('createMediaDecoder', () => {
 
   it('caches media info — computeDuration called only once', async () => {
     const resolver = createMockResolver();
-    const decoder = createMediaDecoder(resolver);
+    const audioContext = createMockAudioContext();
+    const decoder = createMediaDecoder(resolver, audioContext);
 
     const info1 = await decoder.getMediaInfo('asset-1');
     const info2 = await decoder.getMediaInfo('asset-1');
@@ -174,7 +213,8 @@ describe('createMediaDecoder', () => {
   it('handles assets with no video track in getMediaInfo', async () => {
     mockInput.getPrimaryVideoTrack.mockResolvedValue(null);
     const resolver = createMockResolver();
-    const decoder = createMediaDecoder(resolver);
+    const audioContext = createMockAudioContext();
+    const decoder = createMediaDecoder(resolver, audioContext);
 
     const info = await decoder.getMediaInfo('asset-audio-only');
 
@@ -189,7 +229,8 @@ describe('createMediaDecoder', () => {
   it('throws when decoding video frame from asset with no video track', async () => {
     mockInput.getPrimaryVideoTrack.mockResolvedValue(null);
     const resolver = createMockResolver();
-    const decoder = createMediaDecoder(resolver);
+    const audioContext = createMockAudioContext();
+    const decoder = createMediaDecoder(resolver, audioContext);
 
     await expect(decoder.decodeVideoFrame('asset-audio-only', 0, 1920, 1080)).rejects.toThrow(
       'No video track in asset asset-audio-only',
@@ -199,7 +240,8 @@ describe('createMediaDecoder', () => {
   it('throws when decoding audio from asset with no audio track', async () => {
     mockInput.getPrimaryAudioTrack.mockResolvedValue(null);
     const resolver = createMockResolver();
-    const decoder = createMediaDecoder(resolver);
+    const audioContext = createMockAudioContext();
+    const decoder = createMediaDecoder(resolver, audioContext);
 
     await expect(decoder.decodeAudio('asset-video-only')).rejects.toThrow(
       'No audio track in asset asset-video-only',
@@ -208,7 +250,8 @@ describe('createMediaDecoder', () => {
 
   it('destroy releases all resources by calling dispose on each input', async () => {
     const resolver = createMockResolver();
-    const decoder = createMediaDecoder(resolver);
+    const audioContext = createMockAudioContext();
+    const decoder = createMediaDecoder(resolver, audioContext);
 
     // Load two different assets
     await decoder.decodeVideoFrame('asset-1', 0, 1920, 1080);
@@ -230,7 +273,8 @@ describe('createMediaDecoder', () => {
         return new Blob([new Uint8Array([1, 2, 3])], { type: 'video/mp4' });
       }),
     });
-    const decoder = createMediaDecoder(resolver);
+    const audioContext = createMockAudioContext();
+    const decoder = createMediaDecoder(resolver, audioContext);
 
     // First attempt should fail
     await expect(decoder.decodeVideoFrame('asset-fail', 0, 1920, 1080)).rejects.toThrow('Network error');
@@ -243,7 +287,8 @@ describe('createMediaDecoder', () => {
 
   it('handles concurrent requests for the same asset without duplicate fetchBlob calls', async () => {
     const resolver = createMockResolver();
-    const decoder = createMediaDecoder(resolver);
+    const audioContext = createMockAudioContext();
+    const decoder = createMediaDecoder(resolver, audioContext);
 
     // Fire three concurrent requests for the same asset
     const [r1, r2, r3] = await Promise.all([

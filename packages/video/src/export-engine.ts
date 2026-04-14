@@ -37,7 +37,10 @@ export function createExportEngine(): ExportEngine {
       const height = options.height ?? composition.settings.height;
       const totalFrames = Math.ceil(composition.duration * fps);
 
-      const decoder = createMediaDecoder(resolver);
+      // Minimal OfflineAudioContext used only for decodeAudioData during asset
+      // decoding (export has its own offline context for actual audio rendering).
+      const decoderAudioCtx = new OfflineAudioContext(1, 1, composition.settings.sampleRate || 48000);
+      const decoder = createMediaDecoder(resolver, decoderAudioCtx);
       const compositor = await createCompositor(width, height, 'canvas2d');
       const renderer = createFrameRenderer(decoder, compositor, width, height);
 

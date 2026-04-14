@@ -83,6 +83,12 @@ vi.stubGlobal('OffscreenCanvas', vi.fn().mockImplementation((w: number, h: numbe
   getContext: vi.fn().mockReturnValue(mockRenderCtx),
 })));
 
+// Stub OfflineAudioContext — export-engine creates one just for decodeAudioData.
+vi.stubGlobal('OfflineAudioContext', vi.fn().mockImplementation(() => ({
+  decodeAudioData: vi.fn().mockRejectedValue(new Error('mock')),
+  createBuffer: vi.fn(),
+})));
+
 // ── Import after mocks ──────────────────────────────────────────────────────
 
 const { createExportEngine } = await import('../src/export-engine.js');

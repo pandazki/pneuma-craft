@@ -90,6 +90,12 @@ export function createMockAudioContext(): AudioContext {
     sampleRate: 48000,
     createGain: vi.fn(() => ({ ...mockGainNode })),
     createBufferSource: vi.fn(() => ({ ...mockSourceNode })),
+    createBuffer: vi.fn((channels: number, length: number, sampleRate: number) =>
+      createMockAudioBuffer(length / sampleRate, sampleRate, channels),
+    ),
+    // Reject by default so tests exercise the MediaBunny fallback path.
+    // Individual tests override this to test the decodeAudioData fast path.
+    decodeAudioData: vi.fn().mockRejectedValue(new Error('mock decodeAudioData default reject')),
     resume: vi.fn().mockResolvedValue(undefined),
     suspend: vi.fn().mockResolvedValue(undefined),
     close: vi.fn().mockResolvedValue(undefined),
@@ -169,15 +175,19 @@ export function createMockAssetResolver(overrides: Partial<AssetResolver> = {}):
   };
 }
 
-export function createMockAudioBuffer(duration = 5, sampleRate = 48000): AudioBuffer {
+export function createMockAudioBuffer(
+  duration = 5,
+  sampleRate = 48000,
+  numberOfChannels = 2,
+): AudioBuffer {
   const length = Math.ceil(duration * sampleRate);
-  const channelData = new Float32Array(length);
+  const channels = Array.from({ length: numberOfChannels }, () => new Float32Array(length));
   return {
     duration,
     length,
     sampleRate,
-    numberOfChannels: 2,
-    getChannelData: vi.fn().mockReturnValue(channelData),
+    numberOfChannels,
+    getChannelData: vi.fn((i: number) => channels[i] ?? channels[0]),
     copyFromChannel: vi.fn(),
     copyToChannel: vi.fn(),
   } as unknown as AudioBuffer;

@@ -241,7 +241,7 @@ export function createPlaybackEngine(options?: PlaybackEngineOptions): PlaybackE
         _audioContext = new AudioContext();
 
         // Create subsystems
-        _decoder = createMediaDecoder(resolver);
+        _decoder = createMediaDecoder(resolver, _audioContext);
         _compositor = await createCompositor(
           composition.settings.width,
           composition.settings.height,
@@ -290,6 +290,17 @@ export function createPlaybackEngine(options?: PlaybackEngineOptions): PlaybackE
         throw new Error('Cannot play: no composition loaded. Call load() first.');
       }
       if (_state === 'playing') return;
+
+      // AudioContext may start in 'suspended' state because it was created
+      // inside engine.load() after awaits, losing the user-gesture chain.
+      // resume() works as long as ANY user gesture has occurred on the page —
+      // clicking the play button is sufficient. Fire-and-forget: audio will
+      // unmute as soon as resume settles, which in practice is <1 frame.
+      if (_audioContext && _audioContext.state === 'suspended') {
+        _audioContext.resume().catch((err) => {
+          console.warn('[PlaybackEngine] AudioContext resume failed:', err);
+        });
+      }
 
       _clock.play();
       _audioScheduler.setPlaybackRate(_playbackRate);
