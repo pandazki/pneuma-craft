@@ -181,6 +181,61 @@ describe('createFrameRenderer', () => {
     expect(compositor.destroy).toHaveBeenCalledOnce();
   });
 
+  // ── Image overlay pattern (main video + timed overlay image) ──────────
+
+  it('main video + image overlay — overlay layer appears only in its time window, above main', async () => {
+    const decoder = createMockMediaDecoder();
+    const compositor = createMockCompositor();
+    const renderer = createFrameRenderer(decoder, compositor, 1920, 1080);
+
+    // Main video track — full 10s
+    const mainClip = createMockClip({
+      id: 'main-clip', assetId: 'video-asset', trackId: 'main',
+      startTime: 0, duration: 10, inPoint: 0, outPoint: 10,
+    });
+    const mainTrack = createMockTrack({ id: 'main', type: 'video', clips: [mainClip] });
+
+    // Overlay track — static image at [3, 5). Image clips live on video tracks;
+    // inPoint/outPoint are ignored by the decoder (single ImageBitmap).
+    const overlayClip = createMockClip({
+      id: 'overlay-clip', assetId: 'image-asset', trackId: 'overlay',
+      startTime: 3, duration: 2, inPoint: 0, outPoint: 0,
+    });
+    const overlayTrack = createMockTrack({ id: 'overlay', type: 'video', clips: [overlayClip] });
+
+    const composition = createMockComposition({
+      tracks: [mainTrack, overlayTrack],
+      duration: 10,
+    });
+
+    // Before overlay window (t=2): only main layer
+    await renderer.renderFrame(composition, 2);
+    let [[layers]] = vi.mocked(compositor.composite).mock.calls;
+    expect(layers).toHaveLength(1);
+    expect(decoder.decodeVideoFrame).toHaveBeenLastCalledWith('video-asset', 2, 1920, 1080);
+
+    vi.mocked(compositor.composite).mockClear();
+    vi.mocked(decoder.decodeVideoFrame).mockClear();
+
+    // Inside overlay window (t=4): both layers, overlay on top (higher zIndex)
+    await renderer.renderFrame(composition, 4);
+    [[layers]] = vi.mocked(compositor.composite).mock.calls;
+    expect(layers).toHaveLength(2);
+    expect(layers[0].zIndex).toBe(0); // main
+    expect(layers[1].zIndex).toBe(1); // overlay (later track = higher zIndex)
+    expect(decoder.decodeVideoFrame).toHaveBeenCalledWith('video-asset', 4, 1920, 1080);
+    expect(decoder.decodeVideoFrame).toHaveBeenCalledWith('image-asset', 1, 1920, 1080);
+    //                                                                  ^ localTime = 4 - 3 = 1 (ignored by image decoder)
+
+    vi.mocked(compositor.composite).mockClear();
+    vi.mocked(decoder.decodeVideoFrame).mockClear();
+
+    // After overlay window (t=6): only main layer
+    await renderer.renderFrame(composition, 6);
+    [[layers]] = vi.mocked(compositor.composite).mock.calls;
+    expect(layers).toHaveLength(1);
+  });
+
   it('returned frame has correct time, width, and height', async () => {
     const decoder = createMockMediaDecoder();
     const compositor = createMockCompositor();

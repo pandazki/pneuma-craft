@@ -76,6 +76,8 @@ interface Compositor {
 
 `FrameRenderer` takes a `Composition` and a time, resolves active clips via `resolveFrame()`, decodes each clip's video frame, composites them as layers, and returns a `RenderedFrame` with an `ImageBitmap`.
 
+Image assets placed on a video track render as static clips: the decoder caches an `ImageBitmap` per asset and returns the same bitmap for every timestamp in the clip's window. See [`docs/recipes/image-clips-and-overlays.md`](../../../docs/recipes/image-clips-and-overlays.md) for the full pattern including multi-track overlays.
+
 ### Export Pipeline
 
 1. Render video frames sequentially via `FrameRenderer`
@@ -95,7 +97,7 @@ interface Compositor {
 | `createFrameRenderer()` | `FrameRenderer` | Single-frame render (used by both engines) |
 | `createMasterClock(options?)` | `MasterClock` | AudioContext-based clock |
 | `createAudioScheduler(options?)` | `AudioScheduler` | Audio playback scheduler |
-| `createMediaDecoder()` | `MediaDecoder` | MediaBunny-based decode |
+| `createMediaDecoder(resolver, audioContext)` | `MediaDecoder` | MediaBunny-based video decode + `decodeAudioData` fast path for audio + `createImageBitmap` fallback for images |
 | `createCompositor(type?)` | `Compositor` | Canvas2D or GPU compositor |
 | `createCanvas2DCompositor()` | `Compositor` | Explicit Canvas2D backend |
 | `createGPUCompositor()` | `Compositor` | Explicit WebGPU backend |

@@ -5,6 +5,7 @@ interface CachedAsset {
   input: InstanceType<typeof Input>;
   blob: Blob;
   videoSink: InstanceType<typeof CanvasSink> | null;
+  imageBitmap: ImageBitmap | null;
   audioBuffer: AudioBuffer | null;
   mediaInfo: MediaInfo | null;
 }
@@ -26,7 +27,7 @@ export function createMediaDecoder(
     const promise = (async () => {
       const blob = await resolver.fetchBlob(assetId);
       const input = new Input({ source: new BlobSource(blob), formats: ALL_FORMATS });
-      const asset: CachedAsset = { input, blob, videoSink: null, audioBuffer: null, mediaInfo: null };
+      const asset: CachedAsset = { input, blob, videoSink: null, imageBitmap: null, audioBuffer: null, mediaInfo: null };
       cache.set(assetId, asset);
       initPromises.delete(assetId);
       return asset;
@@ -44,9 +45,29 @@ export function createMediaDecoder(
   return {
     async decodeVideoFrame(assetId, time, width, height) {
       const asset = await getOrCreateAsset(assetId);
+
+      // Image fast path — cached ImageBitmap, timestamp ignored. An image clip
+      // behaves as a static frame that occupies its Clip's full duration.
+      if (asset.imageBitmap) return asset.imageBitmap;
+
       if (!asset.videoSink) {
-        const videoTrack = await asset.input.getPrimaryVideoTrack();
-        if (!videoTrack) throw new Error(`No video track in asset ${assetId}`);
+        let videoTrack: Awaited<ReturnType<typeof asset.input.getPrimaryVideoTrack>> | null = null;
+        try {
+          videoTrack = await asset.input.getPrimaryVideoTrack();
+        } catch {
+          // MediaBunny couldn't parse this blob as a media container — likely
+          // a standalone image (png/jpg/webp/gif). Fall through to ImageBitmap.
+        }
+        if (!videoTrack) {
+          try {
+            asset.imageBitmap = await createImageBitmap(asset.blob);
+            return asset.imageBitmap;
+          } catch (err) {
+            throw new Error(
+              `Asset ${assetId} has no video track and is not a decodable image: ${(err as Error).message}`,
+            );
+          }
+        }
         asset.videoSink = new CanvasSink(videoTrack, { width, height, fit: 'contain', poolSize: 5 });
       }
       const result = await asset.videoSink.getCanvas(time);
@@ -136,6 +157,7 @@ export function createMediaDecoder(
     destroy() {
       for (const asset of cache.values()) {
         asset.input.dispose();
+        asset.imageBitmap?.close();
       }
       cache.clear();
       initPromises.clear();

@@ -226,15 +226,66 @@ describe('createMediaDecoder', () => {
     expect(info.hasAudio).toBe(true);
   });
 
-  it('throws when decoding video frame from asset with no video track', async () => {
+  it('throws when decoding video frame from asset with no video track and image decode also fails', async () => {
     mockInput.getPrimaryVideoTrack.mockResolvedValue(null);
+    vi.stubGlobal('createImageBitmap', vi.fn().mockRejectedValue(new Error('not an image')));
     const resolver = createMockResolver();
     const audioContext = createMockAudioContext();
     const decoder = createMediaDecoder(resolver, audioContext);
 
     await expect(decoder.decodeVideoFrame('asset-audio-only', 0, 1920, 1080)).rejects.toThrow(
-      'No video track in asset asset-audio-only',
+      /asset-audio-only/,
     );
+    vi.unstubAllGlobals();
+  });
+
+  // ── Image fast path ─────────────────────────────────────────────────────
+
+  it('decodes image asset via createImageBitmap when blob has no video track', async () => {
+    mockInput.getPrimaryVideoTrack.mockResolvedValue(null);
+    const fakeBitmap = { width: 640, height: 360, close: vi.fn() } as unknown as ImageBitmap;
+    const createImageBitmapSpy = vi.fn().mockResolvedValue(fakeBitmap);
+    vi.stubGlobal('createImageBitmap', createImageBitmapSpy);
+
+    const resolver = createMockResolver({
+      fetchBlob: vi.fn().mockResolvedValue(new Blob([new Uint8Array([137, 80, 78, 71])], { type: 'image/png' })),
+    });
+    const audioContext = createMockAudioContext();
+    const decoder = createMediaDecoder(resolver, audioContext);
+
+    const result = await decoder.decodeVideoFrame('image-1', 0, 1920, 1080);
+
+    expect(result).toBe(fakeBitmap);
+    expect(createImageBitmapSpy).toHaveBeenCalledTimes(1);
+    // Image decoding must not touch CanvasSink
+    expect(CanvasSink).not.toHaveBeenCalled();
+
+    vi.unstubAllGlobals();
+  });
+
+  it('caches decoded ImageBitmap — returns same bitmap at any timestamp', async () => {
+    mockInput.getPrimaryVideoTrack.mockResolvedValue(null);
+    const fakeBitmap = { width: 640, height: 360, close: vi.fn() } as unknown as ImageBitmap;
+    const createImageBitmapSpy = vi.fn().mockResolvedValue(fakeBitmap);
+    vi.stubGlobal('createImageBitmap', createImageBitmapSpy);
+
+    const resolver = createMockResolver({
+      fetchBlob: vi.fn().mockResolvedValue(new Blob([new Uint8Array([1])], { type: 'image/png' })),
+    });
+    const audioContext = createMockAudioContext();
+    const decoder = createMediaDecoder(resolver, audioContext);
+
+    const r1 = await decoder.decodeVideoFrame('image-1', 0, 1920, 1080);
+    const r2 = await decoder.decodeVideoFrame('image-1', 3.5, 1920, 1080);
+    const r3 = await decoder.decodeVideoFrame('image-1', 10, 1920, 1080);
+
+    // Timestamp is irrelevant for a still image — decode once, reuse.
+    expect(createImageBitmapSpy).toHaveBeenCalledTimes(1);
+    expect(r1).toBe(fakeBitmap);
+    expect(r2).toBe(fakeBitmap);
+    expect(r3).toBe(fakeBitmap);
+
+    vi.unstubAllGlobals();
   });
 
   it('throws when decoding audio from asset with no audio track', async () => {
