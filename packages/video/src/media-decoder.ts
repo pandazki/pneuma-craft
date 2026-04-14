@@ -10,6 +10,31 @@ interface CachedAsset {
   mediaInfo: MediaInfo | null;
 }
 
+/**
+ * Decodes an image blob and rasterizes it onto a (width × height) OffscreenCanvas
+ * with "contain" fit (aspect-preserving scale, black letterbox). This matches the
+ * CanvasSink's `fit: 'contain'` behavior so image layers and video layers share
+ * the exact same output dimensions — important because the GPU compositor copies
+ * external images into a texture of that exact size and rejects mismatches.
+ */
+async function decodeImageFitted(blob: Blob, width: number, height: number): Promise<ImageBitmap> {
+  const raw = await createImageBitmap(blob);
+  try {
+    const canvas = new OffscreenCanvas(width, height);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Failed to get 2d context for image resize');
+    const scale = Math.min(width / raw.width, height / raw.height);
+    const drawW = raw.width * scale;
+    const drawH = raw.height * scale;
+    const dx = (width - drawW) / 2;
+    const dy = (height - drawH) / 2;
+    ctx.drawImage(raw, 0, 0, raw.width, raw.height, dx, dy, drawW, drawH);
+    return await createImageBitmap(canvas);
+  } finally {
+    raw.close();
+  }
+}
+
 export function createMediaDecoder(
   resolver: AssetResolver,
   audioContext: BaseAudioContext,
@@ -46,8 +71,9 @@ export function createMediaDecoder(
     async decodeVideoFrame(assetId, time, width, height) {
       const asset = await getOrCreateAsset(assetId);
 
-      // Image fast path — cached ImageBitmap, timestamp ignored. An image clip
-      // behaves as a static frame that occupies its Clip's full duration.
+      // Image fast path — cached ImageBitmap (already fitted to the target
+      // dimensions), timestamp ignored. An image clip behaves as a static
+      // frame that occupies its Clip's full duration.
       if (asset.imageBitmap) return asset.imageBitmap;
 
       if (!asset.videoSink) {
@@ -60,7 +86,7 @@ export function createMediaDecoder(
         }
         if (!videoTrack) {
           try {
-            asset.imageBitmap = await createImageBitmap(asset.blob);
+            asset.imageBitmap = await decodeImageFitted(asset.blob, width, height);
             return asset.imageBitmap;
           } catch (err) {
             throw new Error(

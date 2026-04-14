@@ -241,11 +241,29 @@ describe('createMediaDecoder', () => {
 
   // ── Image fast path ─────────────────────────────────────────────────────
 
-  it('decodes image asset via createImageBitmap when blob has no video track', async () => {
-    mockInput.getPrimaryVideoTrack.mockResolvedValue(null);
-    const fakeBitmap = { width: 640, height: 360, close: vi.fn() } as unknown as ImageBitmap;
-    const createImageBitmapSpy = vi.fn().mockResolvedValue(fakeBitmap);
+  // Image fast path requires OffscreenCanvas (for contain-fit resize) and
+  // createImageBitmap called twice per decode: once on the blob (raw),
+  // once on the resized canvas (final).
+  function stubImagePipeline() {
+    const rawBitmap = { width: 1920, height: 1080, close: vi.fn() } as unknown as ImageBitmap;
+    const finalBitmap = { width: 960, height: 540, close: vi.fn() } as unknown as ImageBitmap;
+    const drawImage = vi.fn();
+    const ctx = { drawImage };
+    const canvas = { width: 0, height: 0, getContext: vi.fn().mockReturnValue(ctx) };
+    vi.stubGlobal('OffscreenCanvas', vi.fn().mockImplementation((w: number, h: number) => {
+      canvas.width = w; canvas.height = h;
+      return canvas;
+    }));
+    const createImageBitmapSpy = vi.fn().mockImplementation(async (source: unknown) => {
+      return source instanceof Blob ? rawBitmap : finalBitmap;
+    });
     vi.stubGlobal('createImageBitmap', createImageBitmapSpy);
+    return { rawBitmap, finalBitmap, drawImage, createImageBitmapSpy };
+  }
+
+  it('decodes image asset via createImageBitmap + contain-fit resize', async () => {
+    mockInput.getPrimaryVideoTrack.mockResolvedValue(null);
+    const { finalBitmap, drawImage, createImageBitmapSpy } = stubImagePipeline();
 
     const resolver = createMockResolver({
       fetchBlob: vi.fn().mockResolvedValue(new Blob([new Uint8Array([137, 80, 78, 71])], { type: 'image/png' })),
@@ -253,21 +271,25 @@ describe('createMediaDecoder', () => {
     const audioContext = createMockAudioContext();
     const decoder = createMediaDecoder(resolver, audioContext);
 
-    const result = await decoder.decodeVideoFrame('image-1', 0, 1920, 1080);
+    const result = await decoder.decodeVideoFrame('image-1', 0, 960, 540);
 
-    expect(result).toBe(fakeBitmap);
-    expect(createImageBitmapSpy).toHaveBeenCalledTimes(1);
+    // Final bitmap is the one fitted to the target canvas dimensions.
+    expect(result).toBe(finalBitmap);
+    // Called twice: once on blob (raw), once on resized canvas (final).
+    expect(createImageBitmapSpy).toHaveBeenCalledTimes(2);
+    // Contain-fit math: raw 1920x1080 → scale 0.5 → 960x540 → centered at (0,0)
+    expect(drawImage).toHaveBeenCalledWith(
+      expect.anything(), 0, 0, 1920, 1080, 0, 0, 960, 540,
+    );
     // Image decoding must not touch CanvasSink
     expect(CanvasSink).not.toHaveBeenCalled();
 
     vi.unstubAllGlobals();
   });
 
-  it('caches decoded ImageBitmap — returns same bitmap at any timestamp', async () => {
+  it('caches fitted ImageBitmap — returns same bitmap at any timestamp', async () => {
     mockInput.getPrimaryVideoTrack.mockResolvedValue(null);
-    const fakeBitmap = { width: 640, height: 360, close: vi.fn() } as unknown as ImageBitmap;
-    const createImageBitmapSpy = vi.fn().mockResolvedValue(fakeBitmap);
-    vi.stubGlobal('createImageBitmap', createImageBitmapSpy);
+    const { finalBitmap, createImageBitmapSpy } = stubImagePipeline();
 
     const resolver = createMockResolver({
       fetchBlob: vi.fn().mockResolvedValue(new Blob([new Uint8Array([1])], { type: 'image/png' })),
@@ -275,15 +297,15 @@ describe('createMediaDecoder', () => {
     const audioContext = createMockAudioContext();
     const decoder = createMediaDecoder(resolver, audioContext);
 
-    const r1 = await decoder.decodeVideoFrame('image-1', 0, 1920, 1080);
-    const r2 = await decoder.decodeVideoFrame('image-1', 3.5, 1920, 1080);
-    const r3 = await decoder.decodeVideoFrame('image-1', 10, 1920, 1080);
+    const r1 = await decoder.decodeVideoFrame('image-1', 0, 960, 540);
+    const r2 = await decoder.decodeVideoFrame('image-1', 3.5, 960, 540);
+    const r3 = await decoder.decodeVideoFrame('image-1', 10, 960, 540);
 
-    // Timestamp is irrelevant for a still image — decode once, reuse.
-    expect(createImageBitmapSpy).toHaveBeenCalledTimes(1);
-    expect(r1).toBe(fakeBitmap);
-    expect(r2).toBe(fakeBitmap);
-    expect(r3).toBe(fakeBitmap);
+    // Decoded once (2 createImageBitmap calls — blob + canvas), then cache hits.
+    expect(createImageBitmapSpy).toHaveBeenCalledTimes(2);
+    expect(r1).toBe(finalBitmap);
+    expect(r2).toBe(finalBitmap);
+    expect(r3).toBe(finalBitmap);
 
     vi.unstubAllGlobals();
   });
