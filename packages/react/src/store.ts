@@ -94,8 +94,18 @@ export function createPneumaCraftStore(
     if (playbackInitPromise) return playbackInitPromise;
 
     playbackInitPromise = (async () => {
+      // Guard: refuse to create a half-initialized engine when there is no
+      // composition. Otherwise later seek()/pause() calls would hit a dangling
+      // engine that throws "Cannot seek: no composition loaded".
+      if (!get().composition) {
+        throw new Error('Cannot initialize playback: no composition loaded');
+      }
+
       const { createPlaybackEngine } = await import('@pneuma-craft/video');
       if (destroyed) throw new Error('Store destroyed');
+
+      const composition = get().composition;
+      if (!composition) throw new Error('Composition removed during init');
 
       const engine = createPlaybackEngine({ compositorType: get()._compositorType });
 
@@ -109,13 +119,10 @@ export function createPneumaCraftStore(
         for (const cb of frameListeners) cb(frame);
       });
 
-      const composition = get().composition;
-      if (composition) {
-        await engine.load(composition, get()._assetResolver);
-        if (destroyed) {
-          engine.destroy();
-          throw new Error('Store destroyed');
-        }
+      await engine.load(composition, get()._assetResolver);
+      if (destroyed) {
+        engine.destroy();
+        throw new Error('Store destroyed');
       }
 
       // Apply deferred playback settings
@@ -137,7 +144,7 @@ export function createPneumaCraftStore(
     }
   }
 
-  function syncDomainState(): Partial<PneumaCraftStore> {
+  function syncDomainState(previousCurrentTime: number): Partial<PneumaCraftStore> {
     const composition = timelineCore.getComposition();
     const compositionChanged = composition !== lastCompositionRef;
     lastCompositionRef = composition;
@@ -145,7 +152,17 @@ export function createPneumaCraftStore(
     // If composition changed and playback engine exists, reload or destroy it
     if (compositionChanged && engines.playback) {
       if (composition) {
-        engines.playback.load(composition, assetResolver).catch(console.error);
+        // Preserve the user's playhead across edits, clamped to the new duration.
+        const preservedTime = Math.max(0, Math.min(previousCurrentTime, composition.duration));
+        const engineRef = engines.playback;
+        engineRef.load(composition, assetResolver)
+          .then(() => {
+            // Re-check the engine is still the same (not destroyed / reloaded).
+            if (engines.playback === engineRef && preservedTime > 0) {
+              engineRef.seek(preservedTime);
+            }
+          })
+          .catch(console.error);
         return {
           coreState: timelineCore.getCoreState(),
           composition,
@@ -153,7 +170,7 @@ export function createPneumaCraftStore(
           canRedo: timelineCore.canRedo(),
           events: timelineCore.getEvents(),
           duration: composition.duration,
-          currentTime: 0,
+          currentTime: preservedTime,
         };
       } else {
         engines.playback.destroy();
@@ -207,7 +224,7 @@ export function createPneumaCraftStore(
     // Actions
     dispatch(actor: Actor, command: CoreCommand | CompositionCommand): Event[] {
       const events = timelineCore.dispatch(actor, command);
-      set(syncDomainState());
+      set(syncDomainState(get().currentTime));
       return events;
     },
 
@@ -215,19 +232,19 @@ export function createPneumaCraftStore(
       envelope: CommandEnvelope<CoreCommand | CompositionCommand>,
     ): Event[] {
       const events = timelineCore.dispatchEnvelope(envelope);
-      set(syncDomainState());
+      set(syncDomainState(get().currentTime));
       return events;
     },
 
     undo(): Event[] | null {
       const events = timelineCore.undo();
-      set(syncDomainState());
+      set(syncDomainState(get().currentTime));
       return events;
     },
 
     redo(): Event[] | null {
       const events = timelineCore.redo();
-      set(syncDomainState());
+      set(syncDomainState(get().currentTime));
       return events;
     },
 
@@ -251,11 +268,23 @@ export function createPneumaCraftStore(
     },
 
     seek(time: number): void {
+      // Optimistic update so the UI reacts even before the engine is ready
+      // (first seek may race with lazy engine init, or engine creation may fail).
+      set({ currentTime: time });
       if (engines.playback) {
         engines.playback.seek(time);
-      } else {
-        set({ currentTime: time });
+        return;
       }
+      // No engine yet — lazy-init so seek-before-play paints a frame.
+      ensurePlaybackEngine(get, set)
+        .then((engine) => {
+          // ensurePlaybackEngine's tail already seeks to storedTime, but if a
+          // cached engine was returned we still need to explicitly seek here.
+          engine.seek(time);
+        })
+        .catch((err) => {
+          console.error('[PneumaCraft] Failed to seek:', err);
+        });
     },
 
     setPlaybackRate(rate: number): void {

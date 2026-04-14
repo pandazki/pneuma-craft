@@ -401,26 +401,168 @@ describe('playback engine lifecycle', () => {
     expect(mockPlaybackEngine.seek).toHaveBeenCalledWith(3.5);
   });
 
-  it('seek(time) sets currentTime directly when no engine', () => {
+  it('seek(time) without composition sets currentTime and logs (no dangling engine)', async () => {
+    const { createPlaybackEngine } = await import('@pneuma-craft/video');
+    const createSpy = createPlaybackEngine as ReturnType<typeof vi.fn>;
+    createSpy.mockClear();
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
     const resolver = createMockAssetResolver();
     const store = createPneumaCraftStore(resolver);
 
     store.getState().seek(5);
+    await flushPromises();
+
+    // currentTime set optimistically so UI reacts
     expect(store.getState().currentTime).toBe(5);
+    // No engine should be created without a composition
+    expect(createSpy).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalled();
+
+    errorSpy.mockRestore();
   });
 
-  it('seek before play applies stored currentTime to engine on first play', async () => {
+  it('seek(time) with composition lazy-inits engine and paints frame (Bug 1)', async () => {
+    const { createPlaybackEngine } = await import('@pneuma-craft/video');
+    const createSpy = createPlaybackEngine as ReturnType<typeof vi.fn>;
+    createSpy.mockClear();
+
     const { store } = createStoreWithComposition();
 
-    // Seek before any engine exists
+    // Seek BEFORE any play() — should trigger engine creation + load + seek
     store.getState().seek(3.5);
-    expect(store.getState().currentTime).toBe(3.5);
+    await flushPromises();
 
-    // Now play — engine is created and should seek to stored time
+    expect(createSpy).toHaveBeenCalledTimes(1);
+    expect(mockPlaybackEngine.load).toHaveBeenCalled();
+    expect(mockPlaybackEngine.seek).toHaveBeenCalledWith(3.5);
+    expect(store.getState().currentTime).toBe(3.5);
+  });
+
+  it('seek then play does not create engine twice', async () => {
+    const { createPlaybackEngine } = await import('@pneuma-craft/video');
+    const createSpy = createPlaybackEngine as ReturnType<typeof vi.fn>;
+    createSpy.mockClear();
+
+    const { store } = createStoreWithComposition();
+
+    store.getState().seek(2);
+    await flushPromises();
     store.getState().play();
     await flushPromises();
 
+    expect(createSpy).toHaveBeenCalledTimes(1);
+    expect(mockPlaybackEngine.play).toHaveBeenCalled();
+  });
+
+  it('seek with failing engine creation still advances currentTime', async () => {
+    const { createPlaybackEngine } = await import('@pneuma-craft/video');
+    const createSpy = createPlaybackEngine as ReturnType<typeof vi.fn>;
+    createSpy.mockClear();
+    createSpy.mockImplementationOnce(() => { throw new Error('boom'); });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const { store } = createStoreWithComposition();
+
+    store.getState().seek(4);
+    await flushPromises();
+
+    expect(store.getState().currentTime).toBe(4);
+    expect(errorSpy).toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+
+  it('seek before play applies stored currentTime on engine creation', async () => {
+    const { store } = createStoreWithComposition();
+
+    store.getState().seek(3.5);
+    await flushPromises();
+
     expect(mockPlaybackEngine.seek).toHaveBeenCalledWith(3.5);
+    expect(store.getState().currentTime).toBe(3.5);
+  });
+
+  it('composition edit while paused preserves currentTime (Bug 2)', async () => {
+    const { store, assetId } = createStoreWithComposition();
+
+    store.getState().dispatch('human', {
+      type: 'composition:add-track',
+      track: { type: 'video', name: 'Video 1', clips: [], muted: false, volume: 1, locked: false, visible: true },
+    });
+    const trackId = store.getState().composition!.tracks[0].id;
+    store.getState().dispatch('human', {
+      type: 'composition:add-clip',
+      trackId,
+      clip: { assetId, startTime: 0, duration: 10, inPoint: 0, outPoint: 10 },
+    });
+
+    // Create engine and seek to 5s
+    store.getState().play();
+    await flushPromises();
+    store.getState().seek(5);
+
+    // Edit composition — add another clip on the same track at t=10
+    store.getState().dispatch('human', {
+      type: 'composition:add-clip',
+      trackId,
+      clip: { assetId, startTime: 10, duration: 3, inPoint: 0, outPoint: 3 },
+    });
+
+    // currentTime must stay at 5, not reset to 0
+    expect(store.getState().currentTime).toBe(5);
+  });
+
+  it('composition edit clamps currentTime when new duration is shorter', async () => {
+    const { store, assetId } = createStoreWithComposition();
+
+    store.getState().dispatch('human', {
+      type: 'composition:add-track',
+      track: { type: 'video', name: 'Video 1', clips: [], muted: false, volume: 1, locked: false, visible: true },
+    });
+    const trackId = store.getState().composition!.tracks[0].id;
+    store.getState().dispatch('human', {
+      type: 'composition:add-clip',
+      trackId,
+      clip: { assetId, startTime: 0, duration: 10, inPoint: 0, outPoint: 10 },
+    });
+    const clipId = store.getState().composition!.tracks[0].clips[0].id;
+
+    store.getState().play();
+    await flushPromises();
+    store.getState().seek(9);
+
+    // Shrink the clip — new duration becomes 5s, currentTime=9 is out of range
+    store.getState().dispatch('human', {
+      type: 'composition:trim-clip',
+      clipId,
+      duration: 5,
+      outPoint: 5,
+    });
+
+    expect(store.getState().currentTime).toBeLessThanOrEqual(5);
+  });
+
+  it('play() without composition does not leave a dangling engine (Bug 3)', async () => {
+    const { createPlaybackEngine } = await import('@pneuma-craft/video');
+    const createSpy = createPlaybackEngine as ReturnType<typeof vi.fn>;
+    createSpy.mockClear();
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const resolver = createMockAssetResolver();
+    const store = createPneumaCraftStore(resolver);
+
+    // No composition → play() should reject, no engine created
+    store.getState().play();
+    await flushPromises();
+
+    expect(createSpy).not.toHaveBeenCalled();
+
+    // A later seek before composition also must not create engine
+    store.getState().seek(2);
+    await flushPromises();
+    expect(createSpy).not.toHaveBeenCalled();
+
+    errorSpy.mockRestore();
   });
 
   it('composition change reloads engine when engine exists', async () => {
