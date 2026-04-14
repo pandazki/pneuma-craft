@@ -3,8 +3,7 @@
   "private": true,
   "description": "Viewer + State components for human-agent collaborative content creation",
   "workspaces": [
-    "packages/*",
-    "examples/*"
+    "packages/*"
   ],
   "scripts": {
     "build": "turbo run build",

@@ -4,3 +4,6 @@ dist/
 *.tsbuildinfo
 .superpowers/
 CLAUDE.local.md
+
+# Local archive of the old react-ui package (reference only, not in git)
+_archive_react-ui-old/
