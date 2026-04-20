@@ -12,16 +12,19 @@ interface CachedAsset {
 
 /**
  * Decodes an image blob and rasterizes it onto a (width × height) OffscreenCanvas
- * with "contain" fit (aspect-preserving scale, black letterbox). This matches the
- * CanvasSink's `fit: 'contain'` behavior so image layers and video layers share
- * the exact same output dimensions — important because the GPU compositor copies
- * external images into a texture of that exact size and rejects mismatches.
+ * with "contain" fit (aspect-preserving scale, transparent letterbox). This matches
+ * the CanvasSink's `fit: 'contain'` + `alpha: true` behavior so image layers and
+ * video layers share the exact same output dimensions — important because the GPU
+ * compositor copies external images into a texture of that exact size and rejects
+ * mismatches. The `{ alpha: true }` context option preserves the source image's
+ * alpha channel (e.g. a PNG with transparency) and leaves letterbox regions fully
+ * transparent so underlying layers show through.
  */
 async function decodeImageFitted(blob: Blob, width: number, height: number): Promise<ImageBitmap> {
   const raw = await createImageBitmap(blob);
   try {
     const canvas = new OffscreenCanvas(width, height);
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { alpha: true });
     if (!ctx) throw new Error('Failed to get 2d context for image resize');
     const scale = Math.min(width / raw.width, height / raw.height);
     const drawW = raw.width * scale;
@@ -94,7 +97,17 @@ export function createMediaDecoder(
             );
           }
         }
-        asset.videoSink = new CanvasSink(videoTrack, { width, height, fit: 'contain', poolSize: 5 });
+        asset.videoSink = new CanvasSink(videoTrack, {
+          width,
+          height,
+          fit: 'contain',
+          poolSize: 5,
+          // Preserve source alpha — required for transparent videos (e.g. WebM
+          // with VP8/VP9 alpha, HEVC/AV1 with alpha). With `alpha: false`
+          // (mediabunny default) CanvasSink flattens transparent pixels to a
+          // black background, breaking compositing of alpha videos.
+          alpha: true,
+        });
       }
       const result = await asset.videoSink.getCanvas(time);
       if (!result) throw new Error(`Failed to decode frame at ${time}s for asset ${assetId}`);

@@ -123,4 +123,36 @@ describe('Canvas2DCompositor', () => {
     const compositor = createCanvas2DCompositor(1920, 1080);
     expect(() => compositor.destroy()).not.toThrow();
   });
+
+  it('requests an alpha-enabled 2D context on construction — transparent sources must composite without flattening to black', () => {
+    const getContextSpy = vi.fn().mockReturnValue(mockCtx);
+    vi.stubGlobal('OffscreenCanvas', vi.fn().mockImplementation((w: number, h: number) => ({
+      ...mockCanvas,
+      width: w,
+      height: h,
+      getContext: getContextSpy,
+    })));
+
+    createCanvas2DCompositor(1920, 1080);
+
+    expect(getContextSpy).toHaveBeenCalledWith('2d', { alpha: true });
+  });
+
+  it('requests an alpha-enabled 2D context after resize — alpha must be preserved across resizes', () => {
+    const getContextSpy = vi.fn().mockReturnValue(mockCtx);
+    vi.stubGlobal('OffscreenCanvas', vi.fn().mockImplementation((w: number, h: number) => ({
+      ...mockCanvas,
+      width: w,
+      height: h,
+      getContext: getContextSpy,
+    })));
+
+    const compositor = createCanvas2DCompositor(1920, 1080);
+    compositor.resize(1280, 720);
+
+    // Both the initial canvas and the resized canvas must opt in.
+    expect(getContextSpy).toHaveBeenCalledTimes(2);
+    expect(getContextSpy).toHaveBeenNthCalledWith(1, '2d', { alpha: true });
+    expect(getContextSpy).toHaveBeenNthCalledWith(2, '2d', { alpha: true });
+  });
 });

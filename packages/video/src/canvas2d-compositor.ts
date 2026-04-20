@@ -1,8 +1,11 @@
 import type { Compositor, CompositeLayer } from './types.js';
 
 export function createCanvas2DCompositor(width: number, height: number): Compositor {
+  // `{ alpha: true }` keeps the backing buffer's alpha channel, so transparent
+  // pixels from source layers (alpha videos, PNGs, letterboxed content) remain
+  // transparent in the composed ImageBitmap instead of being flattened to black.
   let canvas = new OffscreenCanvas(width, height);
-  let ctx = canvas.getContext('2d')!;
+  let ctx = canvas.getContext('2d', { alpha: true })!;
   let currentWidth = width;
   let currentHeight = height;
 
@@ -28,7 +31,7 @@ export function createCanvas2DCompositor(width: number, height: number): Composi
       currentWidth = w;
       currentHeight = h;
       canvas = new OffscreenCanvas(w, h);
-      ctx = canvas.getContext('2d')!;
+      ctx = canvas.getContext('2d', { alpha: true })!;
     },
 
     destroy(): void {

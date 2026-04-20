@@ -328,6 +328,99 @@ describe('GPUCompositor', () => {
     expect(mockDevice._mockTexture.destroy).toHaveBeenCalled();
     expect(mockDevice.destroy).toHaveBeenCalled();
   });
+
+  it('requests an alpha-enabled 2D context on the readback canvas — fully-transparent output must stay transparent after readback', async () => {
+    // Re-stub OffscreenCanvas with a getContext spy so we can inspect the args
+    // on the readback canvas created inside composite().
+    const readbackGetContext = vi.fn().mockReturnValue({
+      drawImage: vi.fn(),
+      clearRect: vi.fn(),
+      putImageData: vi.fn(),
+      globalAlpha: 1,
+    });
+    vi.stubGlobal('OffscreenCanvas', vi.fn().mockImplementation((w: number, h: number) => ({
+      width: w,
+      height: h,
+      getContext: readbackGetContext,
+    })));
+
+    const { createGPUCompositor } = await import('../src/gpu-compositor.js');
+    const compositor = await createGPUCompositor(100, 100);
+    await compositor.composite([]); // empty → still runs readback path
+
+    expect(readbackGetContext).toHaveBeenCalledWith('2d', { alpha: true });
+  });
+
+  it('unpremultiplies pixel data before putImageData — semi-transparent alpha-blended edges must not be darkened', async () => {
+    // The fragment shader outputs premultiplied RGB. A pixel that is red at
+    // 50% opacity is stored in the GPU texture as (128, 0, 0, 128) (pre-mul).
+    // After readback, we must unpremultiply to (255, 0, 0, 128) before handing
+    // the bytes to putImageData, which treats its input as straight alpha —
+    // otherwise the canvas double-premultiplies and produces a dimmed color.
+    const width = 2;
+    const height = 1;
+    const bytesPerRow = Math.ceil(width * 4 / 256) * 256; // 256 (padded)
+    const stagingBufferSize = bytesPerRow * height;
+
+    // Stage premultiplied data: pixel 0 = (128,0,0,128) [semi-transparent red],
+    // pixel 1 = (255,255,255,255) [opaque white, unchanged by unpremul].
+    const stagingBytes = new Uint8Array(stagingBufferSize);
+    stagingBytes[0] = 128; stagingBytes[1] = 0; stagingBytes[2] = 0; stagingBytes[3] = 128;
+    stagingBytes[4] = 255; stagingBytes[5] = 255; stagingBytes[6] = 255; stagingBytes[7] = 255;
+
+    // Override the staging buffer's getMappedRange to return our pixel data.
+    mockDevice.createBuffer.mockImplementation((descriptor: { size: number; usage: number }) => {
+      // Only the staging (readback) buffer uses MAP_READ; everything else gets zeros.
+      const isStaging = (descriptor.usage & 0x0001) !== 0; // GPUBufferUsage.MAP_READ
+      return {
+        destroy: vi.fn(),
+        mapAsync: vi.fn().mockResolvedValue(undefined),
+        getMappedRange: vi.fn().mockReturnValue(
+          isStaging ? stagingBytes.buffer : new ArrayBuffer(descriptor.size),
+        ),
+        unmap: vi.fn(),
+      };
+    });
+
+    // Capture the ImageData handed to putImageData.
+    const putImageData = vi.fn();
+    const capturedImageData: Array<{ data: Uint8ClampedArray; width: number; height: number }> = [];
+    vi.stubGlobal('OffscreenCanvas', vi.fn().mockImplementation((w: number, h: number) => ({
+      width: w,
+      height: h,
+      getContext: vi.fn().mockReturnValue({
+        drawImage: vi.fn(),
+        clearRect: vi.fn(),
+        putImageData,
+        globalAlpha: 1,
+      }),
+    })));
+    vi.stubGlobal('ImageData', vi.fn().mockImplementation(
+      (data: Uint8ClampedArray, w: number, h: number) => {
+        const record = { data, width: w, height: h };
+        capturedImageData.push(record);
+        return record;
+      },
+    ));
+
+    const { createGPUCompositor } = await import('../src/gpu-compositor.js');
+    const compositor = await createGPUCompositor(width, height);
+    await compositor.composite([]);
+
+    expect(putImageData).toHaveBeenCalledTimes(1);
+    expect(capturedImageData.length).toBe(1);
+    const result = capturedImageData[0].data;
+    // Semi-transparent pixel: (128,0,0,128) premul → (255,0,0,128) straight.
+    expect(result[0]).toBe(255);
+    expect(result[1]).toBe(0);
+    expect(result[2]).toBe(0);
+    expect(result[3]).toBe(128);
+    // Opaque pixel: unchanged by unpremul.
+    expect(result[4]).toBe(255);
+    expect(result[5]).toBe(255);
+    expect(result[6]).toBe(255);
+    expect(result[7]).toBe(255);
+  });
 });
 
 describe('createCompositor factory', () => {

@@ -97,7 +97,13 @@ describe('createMediaDecoder', () => {
     expect(resolver.fetchBlob).toHaveBeenCalledWith('asset-1');
     expect(BlobSource).toHaveBeenCalledOnce();
     expect(Input).toHaveBeenCalledOnce();
-    expect(CanvasSink).toHaveBeenCalledWith(mockVideoTrack, { width: 1920, height: 1080, fit: 'contain', poolSize: 5 });
+    expect(CanvasSink).toHaveBeenCalledWith(mockVideoTrack, {
+      width: 1920,
+      height: 1080,
+      fit: 'contain',
+      poolSize: 5,
+      alpha: true,
+    });
     expect(mockCanvasSink.getCanvas).toHaveBeenCalledWith(2.5);
     expect(result).toBe(mockCanvas);
   });
@@ -283,6 +289,36 @@ describe('createMediaDecoder', () => {
     );
     // Image decoding must not touch CanvasSink
     expect(CanvasSink).not.toHaveBeenCalled();
+
+    vi.unstubAllGlobals();
+  });
+
+  it('requests an alpha-enabled 2D context when fitting images — PNG transparency must survive the letterbox pass', async () => {
+    mockInput.getPrimaryVideoTrack.mockResolvedValue(null);
+    const { createImageBitmapSpy: _spy } = stubImagePipeline();
+    void _spy;
+
+    // Re-stub OffscreenCanvas with a getContext spy we can introspect.
+    const getContextSpy = vi.fn().mockReturnValue({ drawImage: vi.fn() });
+    vi.stubGlobal('OffscreenCanvas', vi.fn().mockImplementation((w: number, h: number) => ({
+      width: w,
+      height: h,
+      getContext: getContextSpy,
+    })));
+
+    const resolver = createMockResolver({
+      fetchBlob: vi.fn().mockResolvedValue(new Blob([new Uint8Array([137, 80, 78, 71])], { type: 'image/png' })),
+    });
+    const audioContext = createMockAudioContext();
+    const decoder = createMediaDecoder(resolver, audioContext);
+
+    await decoder.decodeVideoFrame('image-1', 0, 960, 540);
+
+    // Must pass { alpha: true } — default (alpha: true is nominal default, but
+    // explicit `{ alpha: true }` is required because some browsers / tooling
+    // use an opaque backing store unless explicitly opted in, which would
+    // flatten a PNG's transparent pixels to black during the contain-fit pass.
+    expect(getContextSpy).toHaveBeenCalledWith('2d', { alpha: true });
 
     vi.unstubAllGlobals();
   });

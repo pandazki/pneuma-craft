@@ -243,9 +243,27 @@ export async function createGPUCompositor(width: number, height: number): Promis
       stagingBuffer.unmap();
       stagingBuffer.destroy();
 
-      // Put pixels into an OffscreenCanvas and create ImageBitmap
+      // The fragment shader outputs premultiplied RGB (see FRAGMENT_SHADER),
+      // so `pixelData` is in premultiplied form. `putImageData` treats its
+      // input as straight (unpremultiplied) alpha — feeding premultiplied
+      // bytes in would cause the canvas to double-premultiply at semi-
+      // transparent pixels, producing darkened/wrong colors on alpha-blended
+      // edges. Unpremultiply so the straight-alpha ImageData contract holds.
+      for (let i = 0; i < pixelData.length; i += 4) {
+        const a = pixelData[i + 3];
+        if (a > 0 && a < 255) {
+          const inv = 255 / a;
+          pixelData[i] = Math.min(255, Math.round(pixelData[i] * inv));
+          pixelData[i + 1] = Math.min(255, Math.round(pixelData[i + 1] * inv));
+          pixelData[i + 2] = Math.min(255, Math.round(pixelData[i + 2] * inv));
+        }
+      }
+
+      // `{ alpha: true }` keeps the readback canvas's alpha channel so a fully
+      // transparent output texture stays transparent (default `alpha: false`
+      // would flatten it to opaque black).
       const readbackCanvas = new OffscreenCanvas(currentWidth, currentHeight);
-      const ctx = readbackCanvas.getContext('2d')!;
+      const ctx = readbackCanvas.getContext('2d', { alpha: true })!;
       const imageData = new ImageData(pixelData, currentWidth, currentHeight);
       ctx.putImageData(imageData, 0, 0);
       return createImageBitmap(readbackCanvas);
