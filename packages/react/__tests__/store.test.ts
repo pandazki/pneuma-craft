@@ -329,6 +329,58 @@ describe('playback engine lifecycle', () => {
     expect(mockPlaybackEngine.play).toHaveBeenCalled();
   });
 
+  it('threads subtitleRenderer into createPlaybackEngine — preview uses it', async () => {
+    const { createPlaybackEngine } = await import('@pneuma-craft/video');
+    const createSpy = createPlaybackEngine as ReturnType<typeof vi.fn>;
+    createSpy.mockClear();
+
+    const resolver = createMockAssetResolver();
+    const subtitleRenderer = vi.fn();
+    const store = createPneumaCraftStore(resolver, 'auto', { subtitleRenderer });
+
+    // Seed composition so playback can initialize.
+    const regEvents = store.getState().dispatch('human', {
+      type: 'asset:register',
+      asset: {
+        type: 'video', uri: '/x.mp4', name: 'x',
+        metadata: { width: 1920, height: 1080, duration: 10 },
+      },
+    });
+    void regEvents;
+    store.getState().dispatch('human', { type: 'composition:create', settings: COMP_SETTINGS });
+
+    store.getState().play();
+    await flushPromises();
+
+    expect(createSpy).toHaveBeenCalledTimes(1);
+    const opts = createSpy.mock.calls[0][0];
+    expect(opts.subtitleRenderer).toBe(subtitleRenderer);
+  });
+
+  it('threads subtitleRenderer into createExportEngine — export uses it', async () => {
+    const { createExportEngine } = await import('@pneuma-craft/video');
+    const createSpy = createExportEngine as ReturnType<typeof vi.fn>;
+    createSpy.mockClear();
+
+    const resolver = createMockAssetResolver();
+    const subtitleRenderer = vi.fn();
+    const store = createPneumaCraftStore(resolver, 'auto', { subtitleRenderer });
+
+    store.getState().dispatch('human', {
+      type: 'asset:register',
+      asset: {
+        type: 'video', uri: '/x.mp4', name: 'x',
+        metadata: { width: 1920, height: 1080, duration: 10 },
+      },
+    });
+    store.getState().dispatch('human', { type: 'composition:create', settings: COMP_SETTINGS });
+
+    await store.getState().exportComposition(EXPORT_OPTIONS);
+
+    expect(createSpy).toHaveBeenCalledTimes(1);
+    expect(createSpy.mock.calls[0][0]).toEqual({ subtitleRenderer });
+  });
+
   it('play() called twice rapidly creates only one engine (concurrent guard)', async () => {
     const { createPlaybackEngine } = await import('@pneuma-craft/video');
     const createSpy = createPlaybackEngine as ReturnType<typeof vi.fn>;

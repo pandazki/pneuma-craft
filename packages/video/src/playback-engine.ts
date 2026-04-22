@@ -8,6 +8,7 @@ import type {
   FrameRenderer,
   MasterClock,
   AudioScheduler,
+  SubtitleRenderer,
 } from './types.js';
 import type { Composition } from '@pneuma-craft/timeline';
 import { createMediaDecoder } from './media-decoder.js';
@@ -20,6 +21,13 @@ export interface PlaybackEngineOptions {
   compositorType?: CompositorType;
   /** Max time a single frame decode may block before the loop skips it. Default 1000ms. */
   decodeTimeoutMs?: number;
+  /**
+   * Optional rasterizer for subtitle-track clips. When provided, active
+   * subtitle clips are composited on top of the video layers — the same code
+   * path used for export, so preview and export stay in lockstep. When
+   * omitted, subtitle tracks render nothing (legacy behavior).
+   */
+  subtitleRenderer?: SubtitleRenderer;
 }
 
 /** Default per-frame decode timeout. Decodes exceeding this are logged and skipped. */
@@ -32,6 +40,7 @@ const DEBUG_LOOP = typeof globalThis !== 'undefined'
 export function createPlaybackEngine(options?: PlaybackEngineOptions): PlaybackEngine {
   const compositorType = options?.compositorType ?? 'canvas2d';
   const decodeTimeoutMs = options?.decodeTimeoutMs ?? DEFAULT_DECODE_TIMEOUT_MS;
+  const subtitleRenderer = options?.subtitleRenderer;
 
   let _state: PlaybackState = 'idle';
   let _playbackRate = 1;
@@ -252,6 +261,7 @@ export function createPlaybackEngine(options?: PlaybackEngineOptions): PlaybackE
           _compositor,
           composition.settings.width,
           composition.settings.height,
+          subtitleRenderer,
         );
         _clock = createMasterClock({
           audioContext: _audioContext,

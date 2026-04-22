@@ -6,6 +6,7 @@ import {
   createMockComposition,
   createMockTrack,
   createMockClip,
+  createMockCanvasImageSource,
 } from './helpers.js';
 
 describe('createFrameRenderer', () => {
@@ -247,5 +248,157 @@ describe('createFrameRenderer', () => {
     expect(frame.time).toBe(1.5);
     expect(frame.width).toBe(640);
     expect(frame.height).toBe(360);
+  });
+
+  // ── Subtitle pipeline ────────────────────────────────────────────────
+  //
+  // These tests pin down the contract for `SubtitleRenderer`: that preview
+  // and export go through the SAME FrameRenderer code path, so if a renderer
+  // is wired in, subtitles are composited consistently in both.
+
+  it('skips subtitle tracks when no SubtitleRenderer is provided — legacy behavior preserved', async () => {
+    const decoder = createMockMediaDecoder();
+    const compositor = createMockCompositor();
+    const renderer = createFrameRenderer(decoder, compositor, 1920, 1080);
+
+    const subClip = createMockClip({
+      id: 'sub-1', assetId: 'sub-asset', trackId: 'sub-track',
+      startTime: 0, duration: 5, inPoint: 0, text: 'hello',
+    });
+    const subTrack = createMockTrack({ id: 'sub-track', type: 'subtitle', clips: [subClip] });
+    const composition = createMockComposition({ tracks: [subTrack], duration: 5 });
+
+    await renderer.renderFrame(composition, 2);
+
+    const [[layers]] = vi.mocked(compositor.composite).mock.calls;
+    expect(layers).toHaveLength(0);
+  });
+
+  it('invokes SubtitleRenderer for each active subtitle clip with clip, localTime, and dimensions', async () => {
+    const decoder = createMockMediaDecoder();
+    const compositor = createMockCompositor();
+    const subImage = createMockCanvasImageSource();
+    const subtitleRenderer = vi.fn().mockResolvedValue(subImage);
+
+    const renderer = createFrameRenderer(
+      decoder, compositor, 1920, 1080, subtitleRenderer,
+    );
+
+    const subClip = createMockClip({
+      id: 'sub-1', assetId: 'sub-asset', trackId: 'sub-track',
+      startTime: 3, duration: 5, inPoint: 0, text: 'hello world',
+    });
+    const subTrack = createMockTrack({ id: 'sub-track', type: 'subtitle', clips: [subClip] });
+    const composition = createMockComposition({ tracks: [subTrack], duration: 10 });
+
+    // Query at t=5 → localTime = 0 + (5 - 3) = 2
+    await renderer.renderFrame(composition, 5);
+
+    expect(subtitleRenderer).toHaveBeenCalledTimes(1);
+    expect(subtitleRenderer).toHaveBeenCalledWith({
+      clip: subClip,
+      localTime: 2,
+      width: 1920,
+      height: 1080,
+    });
+
+    const [[layers]] = vi.mocked(compositor.composite).mock.calls;
+    expect(layers).toHaveLength(1);
+    expect(layers[0].source).toBe(subImage);
+  });
+
+  it('composites subtitles ABOVE video layers — subtitles always win zIndex', async () => {
+    const decoder = createMockMediaDecoder();
+    const compositor = createMockCompositor();
+    const subImage = createMockCanvasImageSource();
+    const subtitleRenderer = vi.fn().mockResolvedValue(subImage);
+
+    const renderer = createFrameRenderer(
+      decoder, compositor, 1920, 1080, subtitleRenderer,
+    );
+
+    // Two video tracks, one subtitle track — subtitle must land on top
+    const vClip1 = createMockClip({
+      id: 'v1', assetId: 'va1', trackId: 'vt1',
+      startTime: 0, duration: 10, inPoint: 0,
+    });
+    const vClip2 = createMockClip({
+      id: 'v2', assetId: 'va2', trackId: 'vt2',
+      startTime: 0, duration: 10, inPoint: 0,
+    });
+    const subClip = createMockClip({
+      id: 's1', assetId: 'sa1', trackId: 'st1',
+      startTime: 0, duration: 10, inPoint: 0, text: 'hi',
+    });
+
+    const vTrack1 = createMockTrack({ id: 'vt1', type: 'video', clips: [vClip1] });
+    const vTrack2 = createMockTrack({ id: 'vt2', type: 'video', clips: [vClip2] });
+    const subTrack = createMockTrack({ id: 'st1', type: 'subtitle', clips: [subClip] });
+
+    const composition = createMockComposition({
+      // Intentionally put subtitle track FIRST in the list to verify the
+      // renderer re-orders subtitles on top regardless of track order.
+      tracks: [subTrack, vTrack1, vTrack2],
+      duration: 10,
+    });
+
+    await renderer.renderFrame(composition, 1);
+
+    const [[layers]] = vi.mocked(compositor.composite).mock.calls;
+    expect(layers).toHaveLength(3);
+    // First two layers are the videos (zIndex 0, 1)
+    expect(layers[0].zIndex).toBe(0);
+    expect(layers[1].zIndex).toBe(1);
+    // Subtitle sits on top (zIndex 2)
+    expect(layers[2].zIndex).toBe(2);
+    expect(layers[2].source).toBe(subImage);
+  });
+
+  it('supports SubtitleRenderer returning null — null layers are skipped, not pushed as empty', async () => {
+    const decoder = createMockMediaDecoder();
+    const compositor = createMockCompositor();
+    const subtitleRenderer = vi.fn().mockResolvedValue(null);
+
+    const renderer = createFrameRenderer(
+      decoder, compositor, 1920, 1080, subtitleRenderer,
+    );
+
+    const subClip = createMockClip({
+      id: 'sub-1', assetId: 'sub-asset', trackId: 'sub-track',
+      startTime: 0, duration: 5, inPoint: 0, text: '',
+    });
+    const subTrack = createMockTrack({ id: 'sub-track', type: 'subtitle', clips: [subClip] });
+    const composition = createMockComposition({ tracks: [subTrack], duration: 5 });
+
+    await renderer.renderFrame(composition, 2);
+
+    expect(subtitleRenderer).toHaveBeenCalledOnce();
+    const [[layers]] = vi.mocked(compositor.composite).mock.calls;
+    expect(layers).toHaveLength(0);
+  });
+
+  it('supports synchronous SubtitleRenderer — not every caller needs async', async () => {
+    const decoder = createMockMediaDecoder();
+    const compositor = createMockCompositor();
+    const subImage = createMockCanvasImageSource();
+    // Return value directly instead of a promise.
+    const subtitleRenderer = vi.fn(() => subImage);
+
+    const renderer = createFrameRenderer(
+      decoder, compositor, 1920, 1080, subtitleRenderer,
+    );
+
+    const subClip = createMockClip({
+      id: 'sub-1', assetId: 'sub-asset', trackId: 'sub-track',
+      startTime: 0, duration: 5, inPoint: 0, text: 'sync',
+    });
+    const subTrack = createMockTrack({ id: 'sub-track', type: 'subtitle', clips: [subClip] });
+    const composition = createMockComposition({ tracks: [subTrack], duration: 5 });
+
+    await renderer.renderFrame(composition, 2);
+
+    const [[layers]] = vi.mocked(compositor.composite).mock.calls;
+    expect(layers).toHaveLength(1);
+    expect(layers[0].source).toBe(subImage);
   });
 });

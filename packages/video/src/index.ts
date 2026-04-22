@@ -7,6 +7,8 @@ export type {
   Compositor,
   RenderedFrame,
   FrameRenderer,
+  SubtitleRenderer,
+  SubtitleRenderParams,
   ClockState,
   MasterClock,
   AudioScheduler,
@@ -21,6 +23,7 @@ export type {
 export { createPlaybackEngine } from './playback-engine.js';
 export type { PlaybackEngineOptions } from './playback-engine.js';
 export { createExportEngine } from './export-engine.js';
+export type { ExportEngineOptions } from './export-engine.js';
 export { createFrameRenderer } from './frame-renderer.js';
 export { createMasterClock } from './master-clock.js';
 export type { MasterClockOptions } from './master-clock.js';

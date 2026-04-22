@@ -1,4 +1,4 @@
-import type { ExportEngine, ExportOptions, AssetResolver } from './types.js';
+import type { ExportEngine, ExportOptions, AssetResolver, SubtitleRenderer } from './types.js';
 import type { Composition } from '@pneuma-craft/timeline';
 import { createMediaDecoder } from './media-decoder.js';
 import { createCompositor } from './compositor.js';
@@ -13,7 +13,17 @@ import {
   BufferTarget,
 } from 'mediabunny';
 
-export function createExportEngine(): ExportEngine {
+export interface ExportEngineOptions {
+  /**
+   * Optional rasterizer for subtitle-track clips. Pass the same renderer used
+   * by `createPlaybackEngine` so the exported video is pixel-identical to the
+   * preview. When omitted, subtitle tracks are skipped during export.
+   */
+  subtitleRenderer?: SubtitleRenderer;
+}
+
+export function createExportEngine(options?: ExportEngineOptions): ExportEngine {
+  const subtitleRenderer = options?.subtitleRenderer;
   const progressListeners = new Set<(progress: number) => void>();
   let abortController: AbortController | null = null;
 
@@ -42,7 +52,7 @@ export function createExportEngine(): ExportEngine {
       const decoderAudioCtx = new OfflineAudioContext(1, 1, composition.settings.sampleRate || 48000);
       const decoder = createMediaDecoder(resolver, decoderAudioCtx);
       const compositor = await createCompositor(width, height, 'canvas2d');
-      const renderer = createFrameRenderer(decoder, compositor, width, height);
+      const renderer = createFrameRenderer(decoder, compositor, width, height, subtitleRenderer);
 
       try {
         const format = options.format === 'webm'

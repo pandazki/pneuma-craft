@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import type { AssetResolver, CompositorType } from '@pneuma-craft/video';
+import type { AssetResolver, CompositorType, SubtitleRenderer } from '@pneuma-craft/video';
 import { PneumaCraftContext } from './context.js';
 import { createPneumaCraftStore, type PneumaCraftStoreApi } from './store.js';
 
@@ -17,12 +17,20 @@ export interface PneumaCraftProviderProps {
    * @default 'auto'
    */
   compositorType?: CompositorType;
+  /**
+   * Rasterizer for subtitle-track clips. When provided, the same function is
+   * used by both the playback engine (preview) and the export engine, so the
+   * exported video is pixel-identical to what the user saw. Immutable after
+   * mount — use a `key` prop to swap renderers.
+   */
+  subtitleRenderer?: SubtitleRenderer;
 }
 
 export function PneumaCraftProvider({
   children,
   assetResolver,
   compositorType = 'auto',
+  subtitleRenderer,
 }: PneumaCraftProviderProps) {
   // The store holds expensive mutable state (audio context, decoder cache, timeline events).
   // We must preserve it across React 19 StrictMode's intentional mount → cleanup → remount
@@ -33,7 +41,7 @@ export function PneumaCraftProvider({
   const pendingDestroyRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   if (!storeRef.current) {
-    storeRef.current = createPneumaCraftStore(assetResolver, compositorType);
+    storeRef.current = createPneumaCraftStore(assetResolver, compositorType, { subtitleRenderer });
   }
 
   useEffect(() => {

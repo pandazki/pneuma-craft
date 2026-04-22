@@ -19,6 +19,7 @@ import type {
   ExportEngine,
   CompositorType,
   RenderedFrame,
+  SubtitleRenderer,
 } from '@pneuma-craft/video';
 
 export interface PneumaCraftStore {
@@ -62,10 +63,26 @@ export interface PneumaCraftStore {
 
 export type PneumaCraftStoreApi = ReturnType<typeof createPneumaCraftStore>;
 
+export interface PneumaCraftStoreOptions {
+  /**
+   * Rasterizes subtitle clips into canvases that get composited on top of the
+   * video layers in BOTH preview and export — the same renderer is threaded
+   * into the playback engine and the export engine, which is what guarantees
+   * the exported video matches what the user sees.
+   *
+   * When omitted, subtitle tracks render nothing (legacy behavior — useful
+   * for consumers that keep their subtitle UI as a separate DOM overlay and
+   * don't need burn-in on export).
+   */
+  subtitleRenderer?: SubtitleRenderer;
+}
+
 export function createPneumaCraftStore(
   assetResolver: AssetResolver,
   compositorType: CompositorType = 'auto',
+  options: PneumaCraftStoreOptions = {},
 ) {
+  const { subtitleRenderer } = options;
   const timelineCore = createTimelineCore();
 
   // Mutable references for lazily-created engines
@@ -107,7 +124,10 @@ export function createPneumaCraftStore(
       const composition = get().composition;
       if (!composition) throw new Error('Composition removed during init');
 
-      const engine = createPlaybackEngine({ compositorType: get()._compositorType });
+      const engine = createPlaybackEngine({
+        compositorType: get()._compositorType,
+        subtitleRenderer,
+      });
 
       engine.onTimeUpdate((time) => {
         set({ currentTime: time });
@@ -317,7 +337,7 @@ export function createPneumaCraftStore(
       try {
         const { createExportEngine } = await import('@pneuma-craft/video');
         if (destroyed) throw new Error('Store destroyed');
-        engines.export = createExportEngine();
+        engines.export = createExportEngine({ subtitleRenderer });
 
         const unsubProgress = engines.export.onProgress((progress) => {
           set({ exportProgress: progress });

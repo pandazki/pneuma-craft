@@ -1,4 +1,4 @@
-import type { Composition } from '@pneuma-craft/timeline';
+import type { Composition, Clip } from '@pneuma-craft/timeline';
 
 // ── Asset Resolver ─────────────────────────────────────────────────────
 
@@ -49,6 +49,35 @@ export interface Compositor {
   resize(width: number, height: number): void;
   destroy(): void;
 }
+
+// ── Subtitle Renderer ──────────────────────────────────────────────────
+//
+// Subtitles are rasterized by a caller-supplied function so pneuma-craft
+// stays unopinionated about fonts, layout, wrapping, and styling. The same
+// renderer is consumed by both the playback engine (preview) and the export
+// engine, which is what guarantees visual parity between "what the user sees"
+// and "what ends up in the exported MP4/WebM".
+//
+// The renderer receives the raw subtitle clip plus the composition's pixel
+// dimensions and returns a `CanvasImageSource` (typically an `OffscreenCanvas`)
+// that the compositor stacks on top of the video layers. Returning `null`
+// means "no subtitle to draw at this frame" — use it to skip empty text
+// without paying for a canvas allocation.
+
+export interface SubtitleRenderParams {
+  /** The subtitle clip being rendered. Read `clip.text` and any custom metadata from here. */
+  readonly clip: Clip;
+  /** Clip-local time (already offset by `clip.startTime` / `clip.inPoint`). */
+  readonly localTime: number;
+  /** Composition pixel width — the returned canvas should match this. */
+  readonly width: number;
+  /** Composition pixel height — the returned canvas should match this. */
+  readonly height: number;
+}
+
+export type SubtitleRenderer = (
+  params: SubtitleRenderParams,
+) => CanvasImageSource | null | Promise<CanvasImageSource | null>;
 
 // ── Frame Renderer ─────────────────────────────────────────────────────
 

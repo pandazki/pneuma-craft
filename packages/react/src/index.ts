@@ -4,7 +4,7 @@ export type { PneumaCraftProviderProps } from './provider.js';
 
 // ── Store ──────────────────────────────────────────────────────────────
 export { createPneumaCraftStore } from './store.js';
-export type { PneumaCraftStore, PneumaCraftStoreApi } from './store.js';
+export type { PneumaCraftStore, PneumaCraftStoreApi, PneumaCraftStoreOptions } from './store.js';
 
 // ── Context ────────────────────────────────────────────────────────────
 export { usePneumaCraftStore } from './context.js';
@@ -29,4 +29,10 @@ export type {
 // ── Re-exported types ──────────────────────────────────────────────────
 export type { Asset, AssetType, Actor, Selection, Event, CoreCommand } from '@pneuma-craft/core';
 export type { Composition, Track, Clip, CompositionSettings, CompositionCommand } from '@pneuma-craft/timeline';
-export type { PlaybackState, ExportOptions, AssetResolver } from '@pneuma-craft/video';
+export type {
+  PlaybackState,
+  ExportOptions,
+  AssetResolver,
+  SubtitleRenderer,
+  SubtitleRenderParams,
+} from '@pneuma-craft/video';

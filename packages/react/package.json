@@ -1,6 +1,6 @@
 {
   "name": "@pneuma-craft/react",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "React 19 components and hooks for pneuma-craft",
   "type": "module",
   "main": "./dist/index.cjs",
