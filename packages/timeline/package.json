@@ -1,6 +1,6 @@
 {
   "name": "@pneuma-craft/timeline",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Composition model — tracks, clips, time-based arrangement",
   "type": "module",
   "main": "./dist/index.cjs",

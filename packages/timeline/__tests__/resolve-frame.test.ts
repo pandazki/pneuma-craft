@@ -44,6 +44,36 @@ describe('resolveFrame', () => {
     expect(resolveFrame(comp, 5).clips).toHaveLength(0);
   });
 
+  it('skips tracks with visible:false — video-layer equivalent of muted', () => {
+    const clip = createMockClip({ startTime: 0, duration: 10 });
+    const hiddenTrack = createMockTrack({ visible: false, clips: [clip] });
+    const comp = createMockComposition({ tracks: [hiddenTrack] });
+    expect(resolveFrame(comp, 5).clips).toHaveLength(0);
+  });
+
+  it('keeps tracks where visible is true or undefined — legacy compositions must still render', () => {
+    const clip = createMockClip({ startTime: 0, duration: 10 });
+
+    // visible: true (explicit)
+    const visibleTrack = createMockTrack({ id: 'visible', visible: true, clips: [clip] });
+    expect(resolveFrame(
+      createMockComposition({ tracks: [visibleTrack] }),
+      5,
+    ).clips).toHaveLength(1);
+
+    // visible: undefined (legacy — field absent). Cast around the Track
+    // factory's default of `true` so we can exercise the `=== false` guard
+    // against a genuinely undefined field.
+    const legacyTrack = {
+      ...createMockTrack({ id: 'legacy', clips: [clip] }),
+      visible: undefined as unknown as boolean,
+    };
+    expect(resolveFrame(
+      createMockComposition({ tracks: [legacyTrack] }),
+      5,
+    ).clips).toHaveLength(1);
+  });
+
   it('returns clips from multiple tracks in order', () => {
     const clip1 = createMockClip({ id: 'c1', trackId: 't1', startTime: 0, duration: 10 });
     const clip2 = createMockClip({ id: 'c2', trackId: 't2', startTime: 0, duration: 10 });
