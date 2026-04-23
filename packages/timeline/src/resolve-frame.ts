@@ -4,12 +4,12 @@ export function resolveFrame(composition: Composition, time: number): ResolvedFr
   const clips: ResolvedFrame['clips'] = [];
 
   for (const track of composition.tracks) {
-    if (track.muted) continue;
-    // Hidden tracks are excluded from the resolved frame so they neither
-    // render in preview nor appear in export. Mirrors the existing `muted`
-    // treatment for audio — `visible === false` is the video-layer opt-out.
-    // Use `=== false` (not `!track.visible`) so legacy compositions where
-    // `visible` is `undefined` keep their pre-0.2 behavior of being shown.
+    // `muted` is NOT checked here: it's a pure audio concept and is enforced
+    // by the audio scheduler / offline renderer. A video track with
+    // `muted: true` should go silent but keep showing its picture — this
+    // function is the picture path only. Use `visible === false` to hide
+    // the picture (explicit `=== false` so legacy compositions where the
+    // field is absent still render).
     if (track.visible === false) continue;
 
     for (const clip of track.clips) {

@@ -37,11 +37,15 @@ describe('resolveFrame', () => {
     expect(frame.clips[0].localTime).toBe(5);
   });
 
-  it('skips muted tracks', () => {
+  it('does NOT skip muted tracks — muted controls audio only, picture stays visible', () => {
+    // Rationale: in standard NLE semantics, muting a video track silences
+    // its audio but keeps its picture on-screen. `muted` is enforced at the
+    // audio scheduler / offline renderer layers; resolveFrame is the picture
+    // path and must not couple the two.
     const clip = createMockClip({ startTime: 0, duration: 10 });
     const mutedTrack = createMockTrack({ muted: true, clips: [clip] });
     const comp = createMockComposition({ tracks: [mutedTrack] });
-    expect(resolveFrame(comp, 5).clips).toHaveLength(0);
+    expect(resolveFrame(comp, 5).clips).toHaveLength(1);
   });
 
   it('skips tracks with visible:false — video-layer equivalent of muted', () => {
