@@ -11,10 +11,14 @@ export function createOfflineAudioRenderer(): OfflineAudioRenderer {
 
       const offlineCtx = new OfflineAudioContext(channels, length, sampleRate);
 
-      // Collect audio clips from unmuted audio tracks
+      // Collect clips from every unmuted media track. Video clips contribute
+      // their embedded audio exactly like standalone audio clips — this is
+      // what keeps the exported audio in lockstep with what the preview
+      // plays. Subtitle/other non-media tracks are skipped.
       const audioClips: Array<{ clip: Clip; track: Track }> = [];
       for (const track of composition.tracks) {
-        if (track.type !== 'audio' || track.muted) continue;
+        if (track.type !== 'audio' && track.type !== 'video') continue;
+        if (track.muted) continue;
         for (const clip of track.clips) {
           audioClips.push({ clip, track });
         }
@@ -26,7 +30,10 @@ export function createOfflineAudioRenderer(): OfflineAudioRenderer {
         try {
           buffer = await decodeAudio(clip.assetId);
         } catch {
-          console.warn(`[OfflineAudioRenderer] Failed to decode audio for clip ${clip.id}`);
+          // Clip has no audio stream (image asset, silent video) or decode
+          // failed. Skip silently — video-track clips routinely have no
+          // audio, so a warning here would be noise. True decode failures
+          // on audio assets surface via the preview path instead.
           continue;
         }
 

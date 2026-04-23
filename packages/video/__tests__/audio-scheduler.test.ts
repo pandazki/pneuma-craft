@@ -94,7 +94,12 @@ describe('createAudioScheduler', () => {
       expect(audioContext.createGain).toHaveBeenCalled();
     });
 
-    it('does not create source nodes for video tracks', () => {
+    it('schedules video-track clips that have an audio buffer loaded', () => {
+      // Video clips carry embedded audio. The scheduler no longer short-
+      // circuits on track.type — it treats video and audio tracks uniformly
+      // for audio scheduling. A clip only gets scheduled if a buffer was
+      // loaded for it (which the playback engine attempts for every media
+      // clip during load()).
       const scheduler = createAudioScheduler({ audioContext });
       const buffer = createMockAudioBuffer();
       scheduler.loadClip('clip-1', buffer);
@@ -105,6 +110,48 @@ describe('createAudioScheduler', () => {
             id: 'track-1',
             type: 'video',
             muted: false,
+            clips: [createMockClip({ id: 'clip-1', startTime: 0, duration: 5 })],
+          }),
+        ],
+      });
+
+      scheduler.play(0, composition);
+      expect(audioContext.createBufferSource).toHaveBeenCalledTimes(1);
+    });
+
+    it('skips video-track clips that have no audio buffer loaded (image/silent-video)', () => {
+      // A video clip on a video track without a loaded buffer must not
+      // schedule a source — scheduleClip is a no-op when the buffer is
+      // missing. This is the path for image assets and silent videos.
+      const scheduler = createAudioScheduler({ audioContext });
+      // Intentionally do NOT call loadClip.
+
+      const composition = createMockComposition({
+        tracks: [
+          createMockTrack({
+            id: 'track-1',
+            type: 'video',
+            muted: false,
+            clips: [createMockClip({ id: 'clip-1', startTime: 0, duration: 5 })],
+          }),
+        ],
+      });
+
+      scheduler.play(0, composition);
+      expect(audioContext.createBufferSource).not.toHaveBeenCalled();
+    });
+
+    it('skips video-track clips when the track is muted', () => {
+      const scheduler = createAudioScheduler({ audioContext });
+      const buffer = createMockAudioBuffer();
+      scheduler.loadClip('clip-1', buffer);
+
+      const composition = createMockComposition({
+        tracks: [
+          createMockTrack({
+            id: 'track-1',
+            type: 'video',
+            muted: true,
             clips: [createMockClip({ id: 'clip-1', startTime: 0, duration: 5 })],
           }),
         ],

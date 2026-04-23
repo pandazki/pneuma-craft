@@ -276,14 +276,24 @@ export function createPlaybackEngine(options?: PlaybackEngineOptions): PlaybackE
 
         _composition = composition;
 
-        // Pre-load audio for audio track clips
-        const audioClips = composition.tracks
-          .filter(track => track.type === 'audio')
+        // Pre-load audio buffers from every clip on every audio OR video track.
+        // Video clips carry their own embedded audio (MediaDecoder.decodeAudio
+        // extracts it from the container), so they participate in the audio
+        // graph just like standalone audio clips. Clips with no audio stream
+        // (images, silent videos) throw — we swallow and skip so they simply
+        // have no buffer loaded, which makes scheduleClip a no-op for them.
+        const mediaClips = composition.tracks
+          .filter(track => track.type === 'audio' || track.type === 'video')
           .flatMap(track => track.clips);
 
-        for (const clip of audioClips) {
-          const audioBuffer = await _decoder.decodeAudio(clip.assetId);
-          _audioScheduler.loadClip(clip.id, audioBuffer);
+        for (const clip of mediaClips) {
+          try {
+            const audioBuffer = await _decoder.decodeAudio(clip.assetId);
+            _audioScheduler.loadClip(clip.id, audioBuffer);
+          } catch {
+            // Clip has no audio (image asset, silent video, or decode failure).
+            // Leave the clip without a buffer; audio-scheduler tolerates this.
+          }
         }
 
         setState('ready');

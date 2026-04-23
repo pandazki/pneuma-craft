@@ -593,7 +593,10 @@ describe('createPlaybackEngine', () => {
     expect(latestMockScheduler.loadClip).toHaveBeenCalled();
   });
 
-  it('load does not decode audio for video track clips', async () => {
+  it('load decodes audio for video track clips — embedded audio is preloaded', async () => {
+    // Video clips carry embedded audio that must participate in the audio
+    // graph, otherwise preview and export lose sound on any video clip the
+    // user drops on a video track.
     const videoOnlyComp = createMockComposition({
       duration: 10,
       tracks: [
@@ -608,7 +611,35 @@ describe('createPlaybackEngine', () => {
     const engine = createPlaybackEngine();
     await engine.load(videoOnlyComp, resolver);
 
-    expect(mockDecoder.decodeAudio).not.toHaveBeenCalled();
+    expect(mockDecoder.decodeAudio).toHaveBeenCalledWith('asset-v1');
+    expect(latestMockScheduler.loadClip).toHaveBeenCalledWith(
+      'vclip-1',
+      expect.anything(),
+    );
+  });
+
+  it('load swallows decodeAudio failures on video-track clips (image/silent video)', async () => {
+    // Pure-image or silent-video clips throw from decodeAudio. The engine
+    // must treat this as "nothing to schedule" rather than a load failure.
+    const videoOnlyComp = createMockComposition({
+      duration: 10,
+      tracks: [
+        createMockTrack({
+          id: 'video-track-1',
+          type: 'video',
+          clips: [createMockClip({ id: 'img-clip', assetId: 'asset-img', trackId: 'video-track-1' })],
+        }),
+      ],
+    });
+
+    mockDecoder.decodeAudio = vi.fn().mockRejectedValue(new Error('no audio track'));
+
+    const engine = createPlaybackEngine();
+    // Must not throw — load() has to tolerate audio-less clips on video tracks.
+    await expect(engine.load(videoOnlyComp, resolver)).resolves.toBeUndefined();
+
+    expect(mockDecoder.decodeAudio).toHaveBeenCalledWith('asset-img');
+    expect(latestMockScheduler.loadClip).not.toHaveBeenCalled();
   });
 
   // ── 11. playbackRate ───────────────────────────────────────────────

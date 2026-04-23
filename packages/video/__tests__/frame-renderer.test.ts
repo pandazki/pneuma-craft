@@ -91,7 +91,10 @@ describe('createFrameRenderer', () => {
     expect(layers).toHaveLength(0);
   });
 
-  it('skips muted tracks — resolveFrame excludes them so no decode calls', async () => {
+  it('still renders picture for muted tracks — muted is audio-only, visible controls picture', async () => {
+    // As of @pneuma-craft/timeline@0.3.0, `muted` and `visible` are
+    // orthogonal: muting a video track silences its audio but keeps the
+    // picture on screen. Hiding requires `visible: false`.
     const decoder = createMockMediaDecoder();
     const compositor = createMockCompositor();
     const renderer = createFrameRenderer(decoder, compositor, 1920, 1080);
@@ -99,6 +102,22 @@ describe('createFrameRenderer', () => {
     const clip = createMockClip({ id: 'clip-1', assetId: 'asset-1', trackId: 'track-1', startTime: 0, duration: 10, inPoint: 0 });
     const mutedTrack = createMockTrack({ id: 'track-1', type: 'video', clips: [clip], muted: true });
     const composition = createMockComposition({ tracks: [mutedTrack], duration: 10 });
+
+    await renderer.renderFrame(composition, 5);
+
+    expect(decoder.decodeVideoFrame).toHaveBeenCalledWith('asset-1', 5, 1920, 1080);
+    const [[layers]] = vi.mocked(compositor.composite).mock.calls;
+    expect(layers).toHaveLength(1);
+  });
+
+  it('skips picture for tracks with visible:false — this is the picture opt-out', async () => {
+    const decoder = createMockMediaDecoder();
+    const compositor = createMockCompositor();
+    const renderer = createFrameRenderer(decoder, compositor, 1920, 1080);
+
+    const clip = createMockClip({ id: 'clip-1', assetId: 'asset-1', trackId: 'track-1', startTime: 0, duration: 10, inPoint: 0 });
+    const hiddenTrack = createMockTrack({ id: 'track-1', type: 'video', clips: [clip], visible: false });
+    const composition = createMockComposition({ tracks: [hiddenTrack], duration: 10 });
 
     await renderer.renderFrame(composition, 5);
 

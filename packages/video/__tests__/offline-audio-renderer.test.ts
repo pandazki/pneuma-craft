@@ -220,9 +220,25 @@ describe('createOfflineAudioRenderer', () => {
       expect(ctx.createBufferSource).not.toHaveBeenCalled();
     });
 
-    it('skips video tracks even when not muted', async () => {
-      const clip = createMockClip({ id: 'clip-1', assetId: 'asset-1' });
+    it('includes unmuted video tracks — embedded audio is mixed into the export', async () => {
+      // Parity with preview: a video clip's embedded audio must survive export.
+      const clip = createMockClip({ id: 'clip-1', assetId: 'asset-1', startTime: 0, duration: 5 });
       const track = createMockTrack({ id: 'track-1', type: 'video', muted: false, clips: [clip] });
+      const composition = createMockComposition({ duration: 10, tracks: [track] });
+      const resolver = createMockAssetResolver();
+      const buffer = createMockAudioBuffer(5, 48000);
+      const decodeAudio = vi.fn().mockResolvedValue(buffer);
+
+      await renderer.render(composition, resolver, decodeAudio);
+
+      expect(decodeAudio).toHaveBeenCalledWith('asset-1');
+      const ctx = OfflineAudioContextMock.mock.results[0].value;
+      expect(ctx.createBufferSource).toHaveBeenCalledTimes(1);
+    });
+
+    it('skips muted video tracks — muted is the audio opt-out for both track types', async () => {
+      const clip = createMockClip({ id: 'clip-1', assetId: 'asset-1' });
+      const track = createMockTrack({ id: 'track-1', type: 'video', muted: true, clips: [clip] });
       const composition = createMockComposition({ duration: 10, tracks: [track] });
       const resolver = createMockAssetResolver();
       const decodeAudio = vi.fn();
@@ -230,6 +246,29 @@ describe('createOfflineAudioRenderer', () => {
       await renderer.render(composition, resolver, decodeAudio);
 
       expect(decodeAudio).not.toHaveBeenCalled();
+    });
+
+    it('silently skips video clips whose decodeAudio throws (silent videos / images)', async () => {
+      // Image assets and silent videos will throw from decodeAudio. The
+      // offline renderer must swallow this without logging — video-track
+      // clips without audio are routine, not an error.
+      const clip = createMockClip({ id: 'clip-1', assetId: 'asset-img', startTime: 0, duration: 5 });
+      const track = createMockTrack({ id: 'track-1', type: 'video', muted: false, clips: [clip] });
+      const composition = createMockComposition({ duration: 10, tracks: [track] });
+      const resolver = createMockAssetResolver();
+      const decodeAudio = vi.fn().mockRejectedValue(new Error('no audio track'));
+
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        await renderer.render(composition, resolver, decodeAudio);
+      } finally {
+        warnSpy.mockRestore();
+      }
+
+      expect(decodeAudio).toHaveBeenCalledOnce();
+      const ctx = OfflineAudioContextMock.mock.results[0].value;
+      expect(ctx.createBufferSource).not.toHaveBeenCalled();
+      expect(warnSpy).not.toHaveBeenCalled();
     });
   });
 

@@ -1,6 +1,6 @@
 {
   "name": "@pneuma-craft/video",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Video engine — decode, composite, preview, export (built on MediaBunny)",
   "type": "module",
   "main": "./dist/index.cjs",

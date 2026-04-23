@@ -185,7 +185,13 @@ export function createAudioScheduler(options: AudioSchedulerOptions): AudioSched
 
   function scheduleComposition(fromTime: number, composition: Composition): void {
     for (const track of composition.tracks) {
-      if (track.type !== 'audio') continue;
+      // Both audio tracks and video tracks contribute audio — a video clip's
+      // embedded audio track gets scheduled alongside pure audio clips. Skip
+      // anything that isn't a media track (e.g. subtitle) and anything that
+      // the user has muted. Clips whose asset has no audio track never get a
+      // buffer loaded (see loadClip in playback-engine.ts), so `scheduleClip`
+      // naturally skips them.
+      if (track.type !== 'audio' && track.type !== 'video') continue;
       if (track.muted) continue;
 
       for (const clip of track.clips) {
