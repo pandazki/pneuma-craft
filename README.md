@@ -2,7 +2,7 @@
 
 **Domain infrastructure for human-AI collaborative content creation.**
 
-<pre>bun add @pneuma-craft/core @pneuma-craft/timeline @pneuma-craft/video @pneuma-craft/react @pneuma-craft/react-ui</pre>
+<pre>bun add @pneuma-craft/core @pneuma-craft/timeline @pneuma-craft/video @pneuma-craft/react</pre>
 
 ---
 

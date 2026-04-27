@@ -8,12 +8,17 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs",
-      "types": "./dist/index.d.ts"
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
     }
   },
-  "files": ["dist"],
+  "files": ["dist", "README.md", "CHANGELOG.md"],
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
@@ -42,5 +47,24 @@
     "typescript": "^5.7.0",
     "vitest": "^3.1.0"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pandazki/pneuma-craft.git",
+    "directory": "packages/react"
+  },
+  "homepage": "https://github.com/pandazki/pneuma-craft#readme",
+  "bugs": {
+    "url": "https://github.com/pandazki/pneuma-craft/issues"
+  },
+  "keywords": [
+    "pneuma-craft",
+    "react",
+    "react-19",
+    "video-editor",
+    "hooks"
+  ]
 }
