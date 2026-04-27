@@ -4,6 +4,12 @@
 **Status:** Approved
 **Scope:** Architecture & domain model for the pneuma-craft component library
 
+> **Note (2026-04-27):** Original design from 2026-04-09. The current shipped
+> scope diverges — `@pneuma-craft/react-ui` (Section 7) and the standalone
+> example app at `examples/video-editor/` (Section 8) have been deferred and
+> may return later. See the [README](../../README.md) for what's currently
+> published.
+
 ---
 
 ## 1. Vision

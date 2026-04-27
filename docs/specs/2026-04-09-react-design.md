@@ -6,6 +6,11 @@
 **Depends on:** @pneuma-craft/core, @pneuma-craft/timeline, @pneuma-craft/video
 **Styled components:** Separate package `@pneuma-craft/react-ui` (future phase)
 
+> **Note (2026-04-27):** Original design from 2026-04-09. The current shipped
+> scope diverges — `@pneuma-craft/react-ui` and the standalone example app
+> have been deferred and may return later. See the [README](../../README.md)
+> for what's currently published.
+
 ---
 
 ## 1. Purpose
