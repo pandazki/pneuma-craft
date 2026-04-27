@@ -85,17 +85,16 @@ pneuma-craft is a **foundational component library** — not a complete applicat
 
 It is extracted from and consumed by [pneuma-skills](https://github.com/pandazki/pneuma-skills), the co-creation platform for humans and code agents. pneuma-skills provides the visual environment, agent runtime, and skill system. pneuma-craft provides the domain model and viewer components.
 
-The five packages stack from bottom to top:
+The four packages stack from bottom to top:
 
 ```
-@pneuma-craft/react-ui   ← Styled UI components (Preview, Timeline, AssetLibrary)
-@pneuma-craft/react       ← React bindings (hooks, provider, headless components)
+@pneuma-craft/react       ← React 19 bindings (hooks, providers, headless components)
 @pneuma-craft/video       ← Video engine (decode, composite, playback, export)
 @pneuma-craft/timeline    ← Composition model (tracks, clips, time-based arrangement)
 @pneuma-craft/core        ← Domain model (asset registry, provenance graph, events)
 ```
 
-Core, timeline, and video are **pure TypeScript** — no React, no DOM assumptions. They can run in Workers, Node.js, or any framework. The React layer is optional. The UI layer is optional. You use only what you need.
+Core, timeline, and video are **pure TypeScript** — no React, no DOM assumptions. They can run in Workers, Node.js, or any framework. The React layer is optional. You use only what you need.
 
 ---
 

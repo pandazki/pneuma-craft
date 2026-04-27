@@ -107,10 +107,14 @@ pneuma-craft/
 │   ├── timeline/       # Composition model, clip resolution, clock
 │   ├── video/          # Video engine (MediaBunny-based)
 │   └── react/          # React components and hooks
-├── examples/
-│   └── video-editor/   # Standalone demo app
 ├── docs/
-│   └── specs/          # Design specs
+│   ├── why-pneuma-craft/  # Illustrated explainer
+│   ├── specs/             # Design specs
+│   └── recipes/           # Common patterns
+├── scripts/
+│   └── publish.mjs     # Release script (used by GitHub Actions)
+├── .changeset/         # Pending release changesets
+├── .github/workflows/  # CI + changesets-driven release
 ├── package.json        # Root workspace config
 ├── turbo.json          # Turborepo config
 └── CLAUDE.md           # This file
