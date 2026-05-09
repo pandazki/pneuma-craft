@@ -7,11 +7,6 @@ on:
 concurrency:
   group: release-${{ github.ref }}
 
-# Opt the JS-based actions onto Node 24 ahead of GitHub's June 2026
-# auto-switch — silences the Node 20 deprecation warning on every run.
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
-
 jobs:
   release:
     # Skip on the changesets bot's own commits to avoid loops.
@@ -22,7 +17,7 @@ jobs:
       pull-requests: write  # open / update the PR
       id-token: write       # OIDC token for npm trusted publishing
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -34,9 +29,13 @@ jobs:
       # which performs the OIDC token exchange. bun publish doesn't support
       # --provenance yet, but we still need bun to pack (it rewrites
       # `workspace:*` deps to concrete versions).
-      - uses: actions/setup-node@v4
+      #
+      # Node 24 ships with npm 11+, which is required for trusted-publisher
+      # OIDC auth on the actual publish PUT (npm 10 can sign provenance but
+      # still wants a token for the upload itself).
+      - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24
           registry-url: 'https://registry.npmjs.org'
 
       - run: bun install --frozen-lockfile
