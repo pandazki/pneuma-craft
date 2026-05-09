@@ -15,6 +15,7 @@ export interface Track {
   readonly type: TrackType;
   readonly name: string;
   readonly clips: Clip[];
+  readonly previewFrames: PreviewFrame[];
   readonly muted: boolean;
   readonly volume: number;
   readonly locked: boolean;
@@ -33,6 +34,17 @@ export interface Clip {
   readonly volume?: number;
   readonly fadeIn?: number;
   readonly fadeOut?: number;
+}
+
+// A planning-layer visual attached to a track at a single time point.
+// Lets go (does not render) when a real clip on the same track covers that
+// moment. Always points at an image asset; carries no duration/transition
+// because it is a step-function placeholder, not finished material.
+export interface PreviewFrame {
+  readonly id: string;
+  readonly trackId: string;
+  readonly time: number;
+  readonly assetId: string;
 }
 
 export interface Transition {
@@ -73,16 +85,25 @@ export interface ResolvedClip {
   readonly localTime: number;
 }
 
+export interface ResolvedPreviewFrame {
+  readonly previewFrame: PreviewFrame;
+  readonly track: Track;
+}
+
 export interface ResolvedFrame {
   readonly time: number;
   readonly clips: ResolvedClip[];
+  // Populated only for video tracks where no clip covers `time`. Already
+  // mutually exclusive with `clips` per track — consumers do not need to
+  // re-derive the let-go decision.
+  readonly previewFrames: ResolvedPreviewFrame[];
 }
 
 // ── Composition Commands ────────────────────────────────────────────────
 
 export type CompositionCommand =
   | { type: 'composition:create'; settings: CompositionSettings }
-  | { type: 'composition:add-track'; track: Omit<Track, 'id'> & { id?: string } }
+  | { type: 'composition:add-track'; track: Omit<Track, 'id' | 'previewFrames'> & { id?: string; previewFrames?: PreviewFrame[] } }
   | { type: 'composition:remove-track'; trackId: string }
   | { type: 'composition:add-clip'; trackId: string; clip: Omit<Clip, 'id' | 'trackId'> & { id?: string } }
   | { type: 'composition:remove-clip'; clipId: string }
@@ -95,4 +116,23 @@ export type CompositionCommand =
   | { type: 'composition:toggle-track-visibility'; trackId: string }
   | { type: 'composition:duplicate-clip'; clipId: string }
   | { type: 'composition:rebind-clip'; clipId: string; assetId: string }
-  | { type: 'composition:rename-track'; trackId: string; name: string };
+  | { type: 'composition:rename-track'; trackId: string; name: string }
+  | {
+      type: 'composition:add-preview-frame';
+      trackId: string;
+      time: number;
+      assetId: string;
+      id?: string;
+    }
+  | { type: 'composition:remove-preview-frame'; previewFrameId: string }
+  | {
+      type: 'composition:move-preview-frame';
+      previewFrameId: string;
+      time: number;
+      trackId?: string;
+    }
+  | {
+      type: 'composition:rebind-preview-frame';
+      previewFrameId: string;
+      assetId: string;
+    };

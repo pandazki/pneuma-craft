@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createInitialCompositionState, applyCompositionEvent } from '../src/state.js';
 import type { Event } from '@pneuma-craft/core';
-import { createMockComposition, createMockTrack, createMockClip, defaultSettings } from './helpers.js';
+import { createMockComposition, createMockTrack, createMockClip, createMockPreviewFrame, defaultSettings } from './helpers.js';
 
 function makeEvent(type: string, payload: Record<string, unknown>): Event {
   return { id: 'e1', commandId: 'c1', actor: 'human', timestamp: 1000, type, payload };
@@ -140,5 +140,67 @@ describe('applyCompositionEvent', () => {
     const state = createInitialCompositionState();
     const same = applyCompositionEvent(state, makeEvent('asset:registered', {}));
     expect(same).toBe(state);
+  });
+
+  // ── Preview Frame Events ────────────────────────────────────────────
+
+  it('composition:preview-frame-added inserts and recomputes duration', () => {
+    const track = createMockTrack({ id: 't1' });
+    let state = { composition: createMockComposition({ tracks: [track] }) };
+    const pf = createMockPreviewFrame({ id: 'pf1', trackId: 't1', time: 14 });
+    state = applyCompositionEvent(state, makeEvent('composition:preview-frame-added', { previewFrame: pf }));
+    expect(state.composition!.tracks[0].previewFrames).toEqual([pf]);
+    expect(state.composition!.duration).toBe(14);
+  });
+
+  it('composition:preview-frame-removed removes pf and recomputes duration', () => {
+    const pf = createMockPreviewFrame({ id: 'pf1', trackId: 't1', time: 14 });
+    const track = createMockTrack({ id: 't1', previewFrames: [pf] });
+    let state = { composition: createMockComposition({ tracks: [track], duration: 14 }) };
+    state = applyCompositionEvent(state, makeEvent('composition:preview-frame-removed', {
+      previewFrameId: 'pf1', previewFrame: pf, trackId: 't1',
+    }));
+    expect(state.composition!.tracks[0].previewFrames).toHaveLength(0);
+    expect(state.composition!.duration).toBe(0);
+  });
+
+  it('composition:preview-frame-moved updates time within same track and re-sorts', () => {
+    const pfA = createMockPreviewFrame({ id: 'pfA', trackId: 't1', time: 0 });
+    const pfB = createMockPreviewFrame({ id: 'pfB', trackId: 't1', time: 5 });
+    const track = createMockTrack({ id: 't1', previewFrames: [pfA, pfB] });
+    let state = { composition: createMockComposition({ tracks: [track] }) };
+    state = applyCompositionEvent(state, makeEvent('composition:preview-frame-moved', {
+      previewFrameId: 'pfA', time: 10, trackId: undefined, previousTime: 0, previousTrackId: 't1',
+    }));
+    expect(state.composition!.tracks[0].previewFrames.map(p => p.id)).toEqual(['pfB', 'pfA']);
+    expect(state.composition!.tracks[0].previewFrames[1].time).toBe(10);
+    expect(state.composition!.duration).toBe(10);
+  });
+
+  it('composition:preview-frame-moved cross-track moves entry between tracks', () => {
+    const pf = createMockPreviewFrame({ id: 'pf1', trackId: 't1', time: 5 });
+    const t1 = createMockTrack({ id: 't1', previewFrames: [pf] });
+    const t2 = createMockTrack({ id: 't2', previewFrames: [] });
+    let state = { composition: createMockComposition({ tracks: [t1, t2] }) };
+    state = applyCompositionEvent(state, makeEvent('composition:preview-frame-moved', {
+      previewFrameId: 'pf1', time: 8, trackId: 't2', previousTime: 5, previousTrackId: 't1',
+    }));
+    expect(state.composition!.tracks[0].previewFrames).toHaveLength(0);
+    expect(state.composition!.tracks[1].previewFrames).toHaveLength(1);
+    expect(state.composition!.tracks[1].previewFrames[0].time).toBe(8);
+    expect(state.composition!.tracks[1].previewFrames[0].trackId).toBe('t2');
+  });
+
+  it('composition:preview-frame-rebound updates assetId only', () => {
+    const pf = createMockPreviewFrame({ id: 'pf1', trackId: 't1', time: 4, assetId: 'sketch-04' });
+    const track = createMockTrack({ id: 't1', previewFrames: [pf] });
+    let state = { composition: createMockComposition({ tracks: [track] }) };
+    state = applyCompositionEvent(state, makeEvent('composition:preview-frame-rebound', {
+      previewFrameId: 'pf1', assetId: 'anchor-04', previousAssetId: 'sketch-04',
+    }));
+    const updated = state.composition!.tracks[0].previewFrames[0];
+    expect(updated.assetId).toBe('anchor-04');
+    expect(updated.time).toBe(4);
+    expect(updated.id).toBe('pf1');
   });
 });

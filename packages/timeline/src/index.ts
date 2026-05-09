@@ -4,10 +4,12 @@ export type {
   TrackType,
   Track,
   Clip,
+  PreviewFrame,
   Transition,
   Composition,
   PlaybackClock,
   ResolvedClip,
+  ResolvedPreviewFrame,
   ResolvedFrame,
   CompositionCommand,
 } from './types.js';
@@ -21,7 +23,7 @@ export { createInitialCompositionState, applyCompositionEvent } from './state.js
 export type { CompositionState } from './state.js';
 
 // ── Command handler ─────────────────────────────────────────────────────
-export { handleCompositionCommand } from './command-handler.js';
+export { handleCompositionCommand, buildSetPreviewFrameCommand } from './command-handler.js';
 
 // ── Typed events ────────────────────────────────────────────────────────
 export { asCompositionEvent } from './events.js';
@@ -39,6 +41,11 @@ export {
   updateClipInComposition,
   findClipById,
   findTrackByClipId,
+  addPreviewFrame,
+  removePreviewFrameFromComposition,
+  updatePreviewFrameInComposition,
+  findPreviewFrameById,
+  findGreatestPreviewFrameAtOrBefore,
 } from './composition-helpers.js';
 
 // ── Undo ────────────────────────────────────────────────────────────────

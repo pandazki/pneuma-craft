@@ -1,10 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { handleCompositionCommand } from '../src/command-handler.js';
+import { handleCompositionCommand, buildSetPreviewFrameCommand } from '../src/command-handler.js';
 import { createInitialState, CommandValidationError } from '@pneuma-craft/core';
 import type { CommandEnvelope, PneumaCraftCoreState } from '@pneuma-craft/core';
-import type { CompositionCommand, Track, Clip } from '../src/types.js';
+import type { AssetType } from '@pneuma-craft/core';
+import type { CompositionCommand, Track, Clip, PreviewFrame } from '../src/types.js';
 import type { CompositionState } from '../src/state.js';
-import { createMockComposition, createMockTrack, createMockClip, defaultSettings } from './helpers.js';
+import { createMockComposition, createMockTrack, createMockClip, createMockPreviewFrame, defaultSettings } from './helpers.js';
 
 function makeEnvelope(command: CompositionCommand): CommandEnvelope<CompositionCommand> {
   return { id: 'cmd-1', actor: 'human', timestamp: 1000, command };
@@ -14,12 +15,23 @@ function stateWith(composition: import('../src/types.js').Composition | null): C
   return { composition };
 }
 
-function coreWithAsset(assetId: string): PneumaCraftCoreState {
+function coreWithAsset(assetId: string, type: AssetType = 'video'): PneumaCraftCoreState {
   const state = createInitialState();
   const registry = new Map(state.registry);
   registry.set(assetId, {
-    id: assetId, type: 'video', uri: '/test.mp4', name: 'Test', metadata: {}, createdAt: 1000,
+    id: assetId, type, uri: '/test', name: 'Test', metadata: {}, createdAt: 1000,
   });
+  return { ...state, registry };
+}
+
+function coreWithAssets(...assets: Array<{ id: string; type: AssetType }>): PneumaCraftCoreState {
+  const state = createInitialState();
+  const registry = new Map(state.registry);
+  for (const a of assets) {
+    registry.set(a.id, {
+      id: a.id, type: a.type, uri: '/test', name: 'Test', metadata: {}, createdAt: 1000,
+    });
+  }
   return { ...state, registry };
 }
 
@@ -366,5 +378,241 @@ describe('composition:reorder-tracks', () => {
     expect(() => handleCompositionCommand(coreState, compState, makeEnvelope({
       type: 'composition:reorder-tracks', trackIds: ['t1', 't2'],
     }))).toThrow();
+  });
+});
+
+// ── Preview Frame Commands ─────────────────────────────────────────────
+
+describe('composition:add-preview-frame', () => {
+  const imgCore = coreWithAsset('image-1', 'image');
+
+  function compWithVideoTrack() {
+    return stateWith(createMockComposition({
+      tracks: [createMockTrack({ id: 'vt', type: 'video' })],
+    }));
+  }
+
+  it('produces preview-frame-added event with generated id', () => {
+    const events = handleCompositionCommand(imgCore, compWithVideoTrack(), makeEnvelope({
+      type: 'composition:add-preview-frame', trackId: 'vt', time: 4, assetId: 'image-1',
+    }));
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe('composition:preview-frame-added');
+    const pf = events[0].payload.previewFrame as PreviewFrame;
+    expect(pf.id).toBeDefined();
+    expect(pf.time).toBe(4);
+    expect(pf.trackId).toBe('vt');
+    expect(pf.assetId).toBe('image-1');
+  });
+
+  it('uses the provided id when supplied', () => {
+    const events = handleCompositionCommand(imgCore, compWithVideoTrack(), makeEnvelope({
+      type: 'composition:add-preview-frame', trackId: 'vt', time: 0, assetId: 'image-1', id: 'pf-custom',
+    }));
+    expect((events[0].payload.previewFrame as PreviewFrame).id).toBe('pf-custom');
+  });
+
+  it('rejects audio track (I2)', () => {
+    const compState = stateWith(createMockComposition({
+      tracks: [createMockTrack({ id: 'at', type: 'audio' })],
+    }));
+    expect(() => handleCompositionCommand(imgCore, compState, makeEnvelope({
+      type: 'composition:add-preview-frame', trackId: 'at', time: 0, assetId: 'image-1',
+    }))).toThrow(/only supported on video tracks/);
+  });
+
+  it('rejects locked track', () => {
+    const compState = stateWith(createMockComposition({
+      tracks: [createMockTrack({ id: 'vt', type: 'video', locked: true })],
+    }));
+    expect(() => handleCompositionCommand(imgCore, compState, makeEnvelope({
+      type: 'composition:add-preview-frame', trackId: 'vt', time: 0, assetId: 'image-1',
+    }))).toThrow(/locked/);
+  });
+
+  it('rejects missing track', () => {
+    expect(() => handleCompositionCommand(imgCore, compWithVideoTrack(), makeEnvelope({
+      type: 'composition:add-preview-frame', trackId: 'nope', time: 0, assetId: 'image-1',
+    }))).toThrow(/Track not found/);
+  });
+
+  it('rejects negative time (I4)', () => {
+    expect(() => handleCompositionCommand(imgCore, compWithVideoTrack(), makeEnvelope({
+      type: 'composition:add-preview-frame', trackId: 'vt', time: -0.001, assetId: 'image-1',
+    }))).toThrow(/time must be >= 0/);
+  });
+
+  it('rejects collision at (trackId, time) (I1)', () => {
+    const existing = createMockPreviewFrame({ id: 'pf-existing', trackId: 'vt', time: 4 });
+    const compState = stateWith(createMockComposition({
+      tracks: [createMockTrack({ id: 'vt', type: 'video', previewFrames: [existing] })],
+    }));
+    expect(() => handleCompositionCommand(imgCore, compState, makeEnvelope({
+      type: 'composition:add-preview-frame', trackId: 'vt', time: 4, assetId: 'image-1',
+    }))).toThrow(/already exists at/);
+  });
+
+  it('rejects non-image asset (I3)', () => {
+    const videoCore = coreWithAsset('video-1', 'video');
+    expect(() => handleCompositionCommand(videoCore, compWithVideoTrack(), makeEnvelope({
+      type: 'composition:add-preview-frame', trackId: 'vt', time: 0, assetId: 'video-1',
+    }))).toThrow(/must be type 'image'/);
+  });
+
+  it('rejects asset not in registry', () => {
+    expect(() => handleCompositionCommand(coreState, compWithVideoTrack(), makeEnvelope({
+      type: 'composition:add-preview-frame', trackId: 'vt', time: 0, assetId: 'missing',
+    }))).toThrow(/not found in registry/);
+  });
+});
+
+describe('composition:remove-preview-frame', () => {
+  it('produces preview-frame-removed event', () => {
+    const pf = createMockPreviewFrame({ id: 'pf-1', trackId: 'vt', time: 4 });
+    const compState = stateWith(createMockComposition({
+      tracks: [createMockTrack({ id: 'vt', type: 'video', previewFrames: [pf] })],
+    }));
+    const events = handleCompositionCommand(coreState, compState, makeEnvelope({
+      type: 'composition:remove-preview-frame', previewFrameId: 'pf-1',
+    }));
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe('composition:preview-frame-removed');
+    expect((events[0].payload.previewFrame as PreviewFrame).id).toBe('pf-1');
+  });
+
+  it('rejects locked track', () => {
+    const pf = createMockPreviewFrame({ id: 'pf-1', trackId: 'vt' });
+    const compState = stateWith(createMockComposition({
+      tracks: [createMockTrack({ id: 'vt', type: 'video', locked: true, previewFrames: [pf] })],
+    }));
+    expect(() => handleCompositionCommand(coreState, compState, makeEnvelope({
+      type: 'composition:remove-preview-frame', previewFrameId: 'pf-1',
+    }))).toThrow(/locked/);
+  });
+
+  it('rejects missing preview frame', () => {
+    const compState = stateWith(createMockComposition());
+    expect(() => handleCompositionCommand(coreState, compState, makeEnvelope({
+      type: 'composition:remove-preview-frame', previewFrameId: 'nope',
+    }))).toThrow(/Preview frame not found/);
+  });
+});
+
+describe('composition:move-preview-frame', () => {
+  function setup() {
+    const pf = createMockPreviewFrame({ id: 'pf-1', trackId: 'vt', time: 4 });
+    return stateWith(createMockComposition({
+      tracks: [
+        createMockTrack({ id: 'vt', type: 'video', previewFrames: [pf] }),
+        createMockTrack({ id: 'vt2', type: 'video' }),
+      ],
+    }));
+  }
+
+  it('produces preview-frame-moved event for time-only move', () => {
+    const events = handleCompositionCommand(coreState, setup(), makeEnvelope({
+      type: 'composition:move-preview-frame', previewFrameId: 'pf-1', time: 8,
+    }));
+    expect(events[0].type).toBe('composition:preview-frame-moved');
+    expect(events[0].payload.time).toBe(8);
+    expect(events[0].payload.trackId).toBeUndefined();
+    expect(events[0].payload.previousTime).toBe(4);
+    expect(events[0].payload.previousTrackId).toBe('vt');
+  });
+
+  it('handles cross-track move', () => {
+    const events = handleCompositionCommand(coreState, setup(), makeEnvelope({
+      type: 'composition:move-preview-frame', previewFrameId: 'pf-1', time: 8, trackId: 'vt2',
+    }));
+    expect(events[0].payload.trackId).toBe('vt2');
+    expect(events[0].payload.previousTrackId).toBe('vt');
+  });
+
+  it('rejects negative time', () => {
+    expect(() => handleCompositionCommand(coreState, setup(), makeEnvelope({
+      type: 'composition:move-preview-frame', previewFrameId: 'pf-1', time: -1,
+    }))).toThrow();
+  });
+
+  it('rejects collision at destination', () => {
+    const pfA = createMockPreviewFrame({ id: 'pfA', trackId: 'vt', time: 4 });
+    const pfB = createMockPreviewFrame({ id: 'pfB', trackId: 'vt', time: 8 });
+    const compState = stateWith(createMockComposition({
+      tracks: [createMockTrack({ id: 'vt', type: 'video', previewFrames: [pfA, pfB] })],
+    }));
+    expect(() => handleCompositionCommand(coreState, compState, makeEnvelope({
+      type: 'composition:move-preview-frame', previewFrameId: 'pfA', time: 8,
+    }))).toThrow(/already exists at/);
+  });
+
+  it('rejects move to non-video track', () => {
+    const pf = createMockPreviewFrame({ id: 'pf-1', trackId: 'vt', time: 4 });
+    const compState = stateWith(createMockComposition({
+      tracks: [
+        createMockTrack({ id: 'vt', type: 'video', previewFrames: [pf] }),
+        createMockTrack({ id: 'at', type: 'audio' }),
+      ],
+    }));
+    expect(() => handleCompositionCommand(coreState, compState, makeEnvelope({
+      type: 'composition:move-preview-frame', previewFrameId: 'pf-1', time: 4, trackId: 'at',
+    }))).toThrow(/only supported on video tracks/);
+  });
+});
+
+describe('composition:rebind-preview-frame', () => {
+  it('produces preview-frame-rebound event', () => {
+    const pf = createMockPreviewFrame({ id: 'pf-1', trackId: 'vt', time: 4, assetId: 'sketch' });
+    const compState = stateWith(createMockComposition({
+      tracks: [createMockTrack({ id: 'vt', type: 'video', previewFrames: [pf] })],
+    }));
+    const core = coreWithAsset('anchor', 'image');
+    const events = handleCompositionCommand(core, compState, makeEnvelope({
+      type: 'composition:rebind-preview-frame', previewFrameId: 'pf-1', assetId: 'anchor',
+    }));
+    expect(events[0].type).toBe('composition:preview-frame-rebound');
+    expect(events[0].payload.assetId).toBe('anchor');
+    expect(events[0].payload.previousAssetId).toBe('sketch');
+  });
+
+  it('rejects non-image asset', () => {
+    const pf = createMockPreviewFrame({ id: 'pf-1', trackId: 'vt' });
+    const compState = stateWith(createMockComposition({
+      tracks: [createMockTrack({ id: 'vt', type: 'video', previewFrames: [pf] })],
+    }));
+    const core = coreWithAsset('vid', 'video');
+    expect(() => handleCompositionCommand(core, compState, makeEnvelope({
+      type: 'composition:rebind-preview-frame', previewFrameId: 'pf-1', assetId: 'vid',
+    }))).toThrow(/must be type 'image'/);
+  });
+});
+
+describe('buildSetPreviewFrameCommand', () => {
+  it('returns add-preview-frame when no preview at (trackId, time)', () => {
+    const comp = createMockComposition({
+      tracks: [createMockTrack({ id: 'vt', type: 'video' })],
+    });
+    const cmd = buildSetPreviewFrameCommand(comp, 'vt', 4, 'image-1');
+    expect(cmd?.type).toBe('composition:add-preview-frame');
+  });
+
+  it('returns rebind-preview-frame when (trackId, time) exists with different asset', () => {
+    const pf = createMockPreviewFrame({ id: 'pf-1', trackId: 'vt', time: 4, assetId: 'sketch' });
+    const comp = createMockComposition({
+      tracks: [createMockTrack({ id: 'vt', type: 'video', previewFrames: [pf] })],
+    });
+    const cmd = buildSetPreviewFrameCommand(comp, 'vt', 4, 'anchor');
+    expect(cmd).toEqual({
+      type: 'composition:rebind-preview-frame',
+      previewFrameId: 'pf-1',
+      assetId: 'anchor',
+    });
+  });
+
+  it('returns null when (trackId, time) exists with same asset', () => {
+    const pf = createMockPreviewFrame({ id: 'pf-1', trackId: 'vt', time: 4, assetId: 'sketch' });
+    const comp = createMockComposition({
+      tracks: [createMockTrack({ id: 'vt', type: 'video', previewFrames: [pf] })],
+    });
+    expect(buildSetPreviewFrameCommand(comp, 'vt', 4, 'sketch')).toBeNull();
   });
 });

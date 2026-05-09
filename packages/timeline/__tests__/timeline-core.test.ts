@@ -1,5 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createTimelineCore } from '../src/timeline-core.js';
+import { buildSetPreviewFrameCommand } from '../src/command-handler.js';
+import { resolveFrame } from '../src/resolve-frame.js';
 import type { Asset } from '@pneuma-craft/core';
 
 describe('TimelineCore', () => {
@@ -201,5 +203,138 @@ describe('dispatchEnvelope', () => {
     expect(tl.canUndo()).toBe(true);
     tl.undo();
     expect(tl.getCoreState().registry.size).toBe(0);
+  });
+
+  // ── Preview Frame Workflow (Scenarios A → B → C) ──────────────────
+
+  it('Scenario A → B → C: agent fills timeline with sketches, upgrades, then real clip arrives', () => {
+    const tl = createTimelineCore();
+
+    tl.dispatch('agent', {
+      type: 'composition:create',
+      settings: { width: 1920, height: 1080, fps: 30, aspectRatio: '16:9' },
+    });
+    tl.dispatch('agent', {
+      type: 'composition:add-track',
+      track: {
+        id: 'vt', type: 'video', name: 'Video', clips: [],
+        muted: false, volume: 1, locked: false, visible: true,
+      },
+    });
+
+    // Register 8 sketch image assets
+    const sketchIds: string[] = [];
+    for (const t of [0, 2, 4, 6, 8, 10, 12, 14]) {
+      const events = tl.dispatch('agent', {
+        type: 'asset:register',
+        asset: { type: 'image', uri: `/sketch-${t}.png`, name: `Sketch ${t}`, metadata: {} },
+      });
+      sketchIds.push((events[0].payload.asset as Asset).id);
+    }
+
+    // ── Scenario A: agent fills the timeline with 8 sketches ──
+    for (let i = 0; i < 8; i++) {
+      tl.dispatch('agent', {
+        type: 'composition:add-preview-frame',
+        trackId: 'vt',
+        time: i * 2,
+        assetId: sketchIds[i],
+      });
+    }
+
+    let comp = tl.getComposition()!;
+    expect(comp.tracks[0].previewFrames).toHaveLength(8);
+    expect(comp.duration).toBe(14);
+
+    // ── Scenario B: agent upgrades sketches at 4s and 8s to anchors ──
+    const anchorAt4Events = tl.dispatch('agent', {
+      type: 'asset:register',
+      asset: { type: 'image', uri: '/anchor-04.png', name: 'Anchor 04', metadata: {} },
+    });
+    const anchorAt4 = (anchorAt4Events[0].payload.asset as Asset).id;
+    const anchorAt8Events = tl.dispatch('agent', {
+      type: 'asset:register',
+      asset: { type: 'image', uri: '/anchor-08.png', name: 'Anchor 08', metadata: {} },
+    });
+    const anchorAt8 = (anchorAt8Events[0].payload.asset as Asset).id;
+
+    // Use the agent ergonomic helper (upsert by trackId+time)
+    const cmd4 = buildSetPreviewFrameCommand(tl.getComposition()!, 'vt', 4, anchorAt4);
+    expect(cmd4?.type).toBe('composition:rebind-preview-frame');
+    tl.dispatch('agent', cmd4!);
+
+    const cmd8 = buildSetPreviewFrameCommand(tl.getComposition()!, 'vt', 8, anchorAt8);
+    tl.dispatch('agent', cmd8!);
+
+    comp = tl.getComposition()!;
+    expect(comp.tracks[0].previewFrames.find(p => p.time === 4)?.assetId).toBe(anchorAt4);
+    expect(comp.tracks[0].previewFrames.find(p => p.time === 8)?.assetId).toBe(anchorAt8);
+    expect(comp.tracks[0].previewFrames.find(p => p.time === 6)?.assetId).toBe(sketchIds[3]);  // unchanged
+
+    // ── Scenario C: agent drops a real clip covering 4–8s, previews let go ──
+    const realEvents = tl.dispatch('agent', {
+      type: 'asset:register',
+      asset: { type: 'video', uri: '/real.mp4', name: 'Real', metadata: { duration: 4 } },
+    });
+    const realVideoId = (realEvents[0].payload.asset as Asset).id;
+
+    tl.dispatch('agent', {
+      type: 'composition:add-clip',
+      trackId: 'vt',
+      clip: {
+        assetId: realVideoId, startTime: 4, duration: 4, inPoint: 0, outPoint: 4,
+      },
+    });
+
+    comp = tl.getComposition()!;
+    expect(comp.tracks[0].clips).toHaveLength(1);
+    // Preview frame data is preserved (per spec)
+    expect(comp.tracks[0].previewFrames).toHaveLength(8);
+
+    // resolveFrame at T=5 (within clip): clip wins
+    const f5 = resolveFrame(comp, 5);
+    expect(f5.clips).toHaveLength(1);
+    expect(f5.previewFrames).toHaveLength(0);
+
+    // resolveFrame at T=3 (no clip): preview shows
+    const f3 = resolveFrame(comp, 3);
+    expect(f3.clips).toHaveLength(0);
+    expect(f3.previewFrames[0].previewFrame.assetId).toBe(sketchIds[1]);  // sketch at t=2
+
+    // resolveFrame at T=10: anchor at t=8 wins (sketch at t=10)
+    const f10 = resolveFrame(comp, 10);
+    expect(f10.previewFrames[0].previewFrame.assetId).toBe(sketchIds[5]);  // sketch at t=10
+  });
+
+  it('Scenario D: undo restores the previous preview frame', () => {
+    const tl = createTimelineCore();
+    tl.dispatch('agent', {
+      type: 'composition:create',
+      settings: { width: 1920, height: 1080, fps: 30, aspectRatio: '16:9' },
+    });
+    tl.dispatch('agent', {
+      type: 'composition:add-track',
+      track: {
+        id: 'vt', type: 'video', name: 'Video', clips: [],
+        muted: false, volume: 1, locked: false, visible: true,
+      },
+    });
+    const regEvents = tl.dispatch('agent', {
+      type: 'asset:register',
+      asset: { type: 'image', uri: '/x.png', name: 'X', metadata: {} },
+    });
+    const assetId = (regEvents[0].payload.asset as Asset).id;
+    tl.dispatch('agent', {
+      type: 'composition:add-preview-frame', trackId: 'vt', time: 4, assetId,
+    });
+    expect(tl.getComposition()!.tracks[0].previewFrames).toHaveLength(1);
+    expect(tl.getComposition()!.duration).toBe(4);
+
+    tl.undo();
+    expect(tl.getComposition()!.tracks[0].previewFrames).toHaveLength(0);
+    expect(tl.getComposition()!.duration).toBe(0);
+
+    tl.redo();
+    expect(tl.getComposition()!.tracks[0].previewFrames).toHaveLength(1);
   });
 });

@@ -1,11 +1,14 @@
 import type { Event } from '@pneuma-craft/core';
-import type { Composition, Clip } from './types.js';
+import type { Composition, Clip, PreviewFrame } from './types.js';
 import { asCompositionEvent } from './events.js';
 import {
   addClipToTrack,
   removeClipFromComposition,
   updateClipInComposition,
   recomputeDuration,
+  addPreviewFrame,
+  removePreviewFrameFromComposition,
+  updatePreviewFrameInComposition,
 } from './composition-helpers.js';
 
 export interface CompositionState {
@@ -176,6 +179,58 @@ export function applyCompositionEvent(
             t.id === e.payload.trackId ? { ...t, name: e.payload.name } : t,
           ),
         },
+      };
+    }
+
+    case 'composition:preview-frame-added': {
+      const comp = state.composition!;
+      const { previewFrame } = e.payload;
+      return {
+        composition: recomputeDuration(
+          addPreviewFrame(comp, previewFrame.trackId, previewFrame),
+        ),
+      };
+    }
+
+    case 'composition:preview-frame-removed': {
+      const comp = state.composition!;
+      return {
+        composition: recomputeDuration(
+          removePreviewFrameFromComposition(comp, e.payload.previewFrameId),
+        ),
+      };
+    }
+
+    case 'composition:preview-frame-moved': {
+      const comp = state.composition!;
+      const { previewFrameId, time, trackId, previousTrackId } = e.payload;
+
+      // Cross-track move: remove from source, add to target with updated trackId+time
+      if (trackId && trackId !== previousTrackId) {
+        const original = comp.tracks
+          .flatMap(t => t.previewFrames)
+          .find(pf => pf.id === previewFrameId)!;
+        const moved: PreviewFrame = { ...original, time, trackId };
+        let updated = removePreviewFrameFromComposition(comp, previewFrameId);
+        updated = addPreviewFrame(updated, trackId, moved);
+        return { composition: recomputeDuration(updated) };
+      }
+
+      return {
+        composition: recomputeDuration(
+          updatePreviewFrameInComposition(comp, previewFrameId, pf => ({ ...pf, time })),
+        ),
+      };
+    }
+
+    case 'composition:preview-frame-rebound': {
+      const comp = state.composition!;
+      return {
+        composition: updatePreviewFrameInComposition(
+          comp,
+          e.payload.previewFrameId,
+          pf => ({ ...pf, assetId: e.payload.assetId }),
+        ),
       };
     }
 

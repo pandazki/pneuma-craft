@@ -1,4 +1,4 @@
-import type { Composition, Track, Clip } from './types.js';
+import type { Composition, Track, Clip, PreviewFrame } from './types.js';
 
 interface CompositionCreatedEvent {
   readonly type: 'composition:created';
@@ -99,6 +99,40 @@ interface CompositionTrackRenamedEvent {
   readonly payload: { readonly trackId: string; readonly name: string; readonly previousName: string };
 }
 
+interface CompositionPreviewFrameAddedEvent {
+  readonly type: 'composition:preview-frame-added';
+  readonly payload: { readonly previewFrame: PreviewFrame };
+}
+
+interface CompositionPreviewFrameRemovedEvent {
+  readonly type: 'composition:preview-frame-removed';
+  readonly payload: {
+    readonly previewFrameId: string;
+    readonly previewFrame: PreviewFrame;
+    readonly trackId: string;
+  };
+}
+
+interface CompositionPreviewFrameMovedEvent {
+  readonly type: 'composition:preview-frame-moved';
+  readonly payload: {
+    readonly previewFrameId: string;
+    readonly time: number;
+    readonly trackId: string | undefined;
+    readonly previousTime: number;
+    readonly previousTrackId: string;
+  };
+}
+
+interface CompositionPreviewFrameReboundEvent {
+  readonly type: 'composition:preview-frame-rebound';
+  readonly payload: {
+    readonly previewFrameId: string;
+    readonly assetId: string;
+    readonly previousAssetId: string;
+  };
+}
+
 export type CompositionEvent =
   | CompositionCreatedEvent
   | CompositionTrackAddedEvent
@@ -114,7 +148,11 @@ export type CompositionEvent =
   | CompositionTrackVisibilityToggledEvent
   | CompositionClipDuplicatedEvent
   | CompositionClipReboundEvent
-  | CompositionTrackRenamedEvent;
+  | CompositionTrackRenamedEvent
+  | CompositionPreviewFrameAddedEvent
+  | CompositionPreviewFrameRemovedEvent
+  | CompositionPreviewFrameMovedEvent
+  | CompositionPreviewFrameReboundEvent;
 
 export function asCompositionEvent(
   event: { type: string; payload: Record<string, unknown> },

@@ -1,8 +1,8 @@
 import type { PneumaCraftCoreState, CommandEnvelope, Event } from '@pneuma-craft/core';
 import { generateId, CommandValidationError } from '@pneuma-craft/core';
-import type { CompositionCommand, Composition, Track, Clip } from './types.js';
+import type { CompositionCommand, Composition, Track, Clip, PreviewFrame } from './types.js';
 import type { CompositionState } from './state.js';
-import { findClipById } from './composition-helpers.js';
+import { findClipById, findPreviewFrameById } from './composition-helpers.js';
 
 /**
  * Generate ripple move events for clips on the same track that would overlap
@@ -99,6 +99,32 @@ function requireClip(composition: Composition, clipId: string): { clip: Clip; tr
   return result;
 }
 
+function requirePreviewFrame(
+  composition: Composition,
+  previewFrameId: string,
+): { previewFrame: PreviewFrame; track: Track } {
+  const result = findPreviewFrameById(composition, previewFrameId);
+  if (!result) {
+    throw new CommandValidationError(`Preview frame not found: ${previewFrameId}`);
+  }
+  return result;
+}
+
+// Verify the asset exists in the registry AND is of type 'image' — preview
+// frames must reference image assets (spec §3.2 invariant I3). Stricter than
+// the clip-side check, which accepts any asset type.
+function requireImageAsset(state: PneumaCraftCoreState, assetId: string): void {
+  const asset = state.registry.get(assetId);
+  if (!asset) {
+    throw new CommandValidationError(`Asset not found in registry: ${assetId}`);
+  }
+  if (asset.type !== 'image') {
+    throw new CommandValidationError(
+      `Preview frame asset must be type 'image', got '${asset.type}': ${assetId}`,
+    );
+  }
+}
+
 export function handleCompositionCommand(
   coreState: PneumaCraftCoreState,
   compState: CompositionState,
@@ -127,7 +153,11 @@ export function handleCompositionCommand(
       if (composition.tracks.some(t => t.id === id)) {
         throw new CommandValidationError(`Track already exists: ${id}`);
       }
-      const track: Track = { ...command.track, id };
+      const track: Track = {
+        ...command.track,
+        id,
+        previewFrames: command.track.previewFrames ?? [],
+      };
       return [makeEvent(envelope, 'composition:track-added', { track })];
     }
 
@@ -336,7 +366,123 @@ export function handleCompositionCommand(
       })];
     }
 
+    case 'composition:add-preview-frame': {
+      const composition = requireComposition(compState);
+      const track = requireTrack(composition, command.trackId);
+      requireTrackNotLocked(track);
+      if (track.type !== 'video') {
+        throw new CommandValidationError(
+          `Preview frames are only supported on video tracks, got '${track.type}': ${command.trackId}`,
+        );
+      }
+      if (command.time < 0) {
+        throw new CommandValidationError(`Preview frame time must be >= 0, got ${command.time}`);
+      }
+      if (track.previewFrames.some(pf => pf.time === command.time)) {
+        throw new CommandValidationError(
+          `Preview frame already exists at (track=${command.trackId}, time=${command.time})`,
+        );
+      }
+      requireImageAsset(coreState, command.assetId);
+      const id = command.id ?? generateId();
+      // Preview frame ids are globally unique across all tracks.
+      for (const t of composition.tracks) {
+        if (t.previewFrames.some(pf => pf.id === id)) {
+          throw new CommandValidationError(`Preview frame already exists: ${id}`);
+        }
+      }
+      const previewFrame: PreviewFrame = {
+        id,
+        trackId: command.trackId,
+        time: command.time,
+        assetId: command.assetId,
+      };
+      return [makeEvent(envelope, 'composition:preview-frame-added', { previewFrame })];
+    }
+
+    case 'composition:remove-preview-frame': {
+      const composition = requireComposition(compState);
+      const { previewFrame, track } = requirePreviewFrame(composition, command.previewFrameId);
+      requireTrackNotLocked(track);
+      return [makeEvent(envelope, 'composition:preview-frame-removed', {
+        previewFrameId: command.previewFrameId,
+        previewFrame,
+        trackId: track.id,
+      })];
+    }
+
+    case 'composition:move-preview-frame': {
+      const composition = requireComposition(compState);
+      const { previewFrame, track: sourceTrack } = requirePreviewFrame(composition, command.previewFrameId);
+      requireTrackNotLocked(sourceTrack);
+      if (command.time < 0) {
+        throw new CommandValidationError(`Preview frame time must be >= 0, got ${command.time}`);
+      }
+      const targetTrackId = command.trackId ?? sourceTrack.id;
+      let targetTrack = sourceTrack;
+      if (command.trackId && command.trackId !== sourceTrack.id) {
+        targetTrack = requireTrack(composition, command.trackId);
+        requireTrackNotLocked(targetTrack);
+        if (targetTrack.type !== 'video') {
+          throw new CommandValidationError(
+            `Preview frames are only supported on video tracks, got '${targetTrack.type}': ${command.trackId}`,
+          );
+        }
+      }
+      // Reject collision at the destination key (excluding self for in-track moves).
+      const collision = targetTrack.previewFrames.some(
+        pf => pf.id !== command.previewFrameId && pf.time === command.time,
+      );
+      if (collision) {
+        throw new CommandValidationError(
+          `Preview frame already exists at (track=${targetTrackId}, time=${command.time})`,
+        );
+      }
+      return [makeEvent(envelope, 'composition:preview-frame-moved', {
+        previewFrameId: command.previewFrameId,
+        time: command.time,
+        trackId: command.trackId,
+        previousTime: previewFrame.time,
+        previousTrackId: sourceTrack.id,
+      })];
+    }
+
+    case 'composition:rebind-preview-frame': {
+      const composition = requireComposition(compState);
+      const { previewFrame, track } = requirePreviewFrame(composition, command.previewFrameId);
+      requireTrackNotLocked(track);
+      requireImageAsset(coreState, command.assetId);
+      return [makeEvent(envelope, 'composition:preview-frame-rebound', {
+        previewFrameId: command.previewFrameId,
+        assetId: command.assetId,
+        previousAssetId: previewFrame.assetId,
+      })];
+    }
+
     default:
       throw new CommandValidationError(`Unknown composition command: ${(command as CompositionCommand).type}`);
   }
+}
+
+// Agent ergonomic helper: builds either an add-preview-frame or rebind-preview-frame
+// command, depending on whether a preview frame already exists at (trackId, time).
+// Returns null when the existing preview frame already targets `assetId` (no-op).
+//
+// Not a command itself — pure utility, lives in user-space. Lets agents do
+// "set the preview at this point to this asset" in one call without losing
+// the 1:1 command/event purity at the protocol layer.
+export function buildSetPreviewFrameCommand(
+  composition: Composition,
+  trackId: string,
+  time: number,
+  assetId: string,
+): CompositionCommand | null {
+  const track = composition.tracks.find(t => t.id === trackId);
+  if (!track) return { type: 'composition:add-preview-frame', trackId, time, assetId };
+  const existing = track.previewFrames.find(pf => pf.time === time);
+  if (!existing) {
+    return { type: 'composition:add-preview-frame', trackId, time, assetId };
+  }
+  if (existing.assetId === assetId) return null;
+  return { type: 'composition:rebind-preview-frame', previewFrameId: existing.id, assetId };
 }

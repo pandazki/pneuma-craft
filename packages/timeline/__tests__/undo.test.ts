@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { invertCompositionEvent } from '../src/undo.js';
 import type { Event } from '@pneuma-craft/core';
-import { createMockTrack, createMockClip } from './helpers.js';
+import { createMockTrack, createMockClip, createMockPreviewFrame } from './helpers.js';
 
 function makeEvent(type: string, payload: Record<string, unknown>): Event {
   return { id: 'e1', commandId: 'c1', actor: 'human', timestamp: 1000, type, payload };
@@ -84,5 +84,45 @@ describe('invertCompositionEvent', () => {
     }));
     expect(inv.type).toBe('composition:tracks-reordered');
     expect(inv.payload.trackIds).toEqual(['t1', 't2']);
+  });
+
+  // ── Preview Frame Inversions ──────────────────────────────────────────
+
+  it('composition:preview-frame-added → preview-frame-removed', () => {
+    const pf = createMockPreviewFrame({ id: 'pf-1', trackId: 't1' });
+    const inv = invertCompositionEvent(makeEvent('composition:preview-frame-added', { previewFrame: pf }));
+    expect(inv.type).toBe('composition:preview-frame-removed');
+    expect(inv.payload.previewFrameId).toBe('pf-1');
+    expect(inv.payload.previewFrame).toEqual(pf);
+    expect(inv.payload.trackId).toBe('t1');
+  });
+
+  it('composition:preview-frame-removed → preview-frame-added', () => {
+    const pf = createMockPreviewFrame({ id: 'pf-1' });
+    const inv = invertCompositionEvent(makeEvent('composition:preview-frame-removed', {
+      previewFrameId: 'pf-1', previewFrame: pf, trackId: 't1',
+    }));
+    expect(inv.type).toBe('composition:preview-frame-added');
+    expect(inv.payload.previewFrame).toEqual(pf);
+  });
+
+  it('composition:preview-frame-moved → reverse move', () => {
+    const inv = invertCompositionEvent(makeEvent('composition:preview-frame-moved', {
+      previewFrameId: 'pf-1', time: 8, trackId: 't2', previousTime: 4, previousTrackId: 't1',
+    }));
+    expect(inv.type).toBe('composition:preview-frame-moved');
+    expect(inv.payload.time).toBe(4);
+    expect(inv.payload.trackId).toBe('t1');
+    expect(inv.payload.previousTime).toBe(8);
+    expect(inv.payload.previousTrackId).toBe('t2');
+  });
+
+  it('composition:preview-frame-rebound → reverse rebind', () => {
+    const inv = invertCompositionEvent(makeEvent('composition:preview-frame-rebound', {
+      previewFrameId: 'pf-1', assetId: 'anchor', previousAssetId: 'sketch',
+    }));
+    expect(inv.type).toBe('composition:preview-frame-rebound');
+    expect(inv.payload.assetId).toBe('sketch');
+    expect(inv.payload.previousAssetId).toBe('anchor');
   });
 });

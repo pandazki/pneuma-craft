@@ -1,4 +1,4 @@
-import type { Composition, CompositionSettings, Track, Clip } from '../src/types.js';
+import type { Composition, CompositionSettings, Track, Clip, PreviewFrame } from '../src/types.js';
 
 export const defaultSettings: CompositionSettings = {
   width: 1920,
@@ -26,10 +26,21 @@ export function createMockTrack(overrides: Partial<Track> = {}): Track {
     type: 'video',
     name: 'Video 1',
     clips: [],
+    previewFrames: [],
     muted: false,
     volume: 1,
     locked: false,
     visible: true,
+    ...overrides,
+  };
+}
+
+export function createMockPreviewFrame(overrides: Partial<PreviewFrame> = {}): PreviewFrame {
+  return {
+    id: 'pf-1',
+    trackId: 'track-1',
+    time: 0,
+    assetId: 'image-asset-1',
     ...overrides,
   };
 }

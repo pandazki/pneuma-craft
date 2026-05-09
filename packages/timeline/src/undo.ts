@@ -108,6 +108,34 @@ export function invertCompositionEvent(event: Event): Event {
         previousName: e.payload.name,
       }};
 
+    case 'composition:preview-frame-added':
+      return { ...base, type: 'composition:preview-frame-removed', payload: {
+        previewFrameId: e.payload.previewFrame.id,
+        previewFrame: e.payload.previewFrame,
+        trackId: e.payload.previewFrame.trackId,
+      }};
+
+    case 'composition:preview-frame-removed':
+      return { ...base, type: 'composition:preview-frame-added', payload: {
+        previewFrame: e.payload.previewFrame,
+      }};
+
+    case 'composition:preview-frame-moved':
+      return { ...base, type: 'composition:preview-frame-moved', payload: {
+        previewFrameId: e.payload.previewFrameId,
+        time: e.payload.previousTime,
+        trackId: e.payload.previousTrackId,
+        previousTime: e.payload.time,
+        previousTrackId: e.payload.trackId ?? e.payload.previousTrackId,
+      }};
+
+    case 'composition:preview-frame-rebound':
+      return { ...base, type: 'composition:preview-frame-rebound', payload: {
+        previewFrameId: e.payload.previewFrameId,
+        assetId: e.payload.previousAssetId,
+        previousAssetId: e.payload.assetId,
+      }};
+
     default:
       throw new Error(`Cannot invert unknown composition event: ${(e as Event).type}`);
   }
