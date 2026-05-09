@@ -42,7 +42,10 @@ jobs:
         id: changesets
         uses: changesets/action@v1
         with:
-          version: bunx changeset version && bun install --no-frozen-lockfile
+          # Wrap the chained command in `bash -c` because changesets/action
+          # spawns the version command without a shell, so `&&` would
+          # otherwise be passed through to bunx as literal args.
+          version: bash -c "bunx changeset version && bun install --no-frozen-lockfile"
           publish: bun run release
           commit: 'chore: release packages'
           title: 'chore: release packages'
