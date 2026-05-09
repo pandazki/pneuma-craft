@@ -7,6 +7,11 @@ on:
 concurrency:
   group: release-${{ github.ref }}
 
+# Opt the JS-based actions onto Node 24 ahead of GitHub's June 2026
+# auto-switch — silences the Node 20 deprecation warning on every run.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
 jobs:
   release:
     # Skip on the changesets bot's own commits to avoid loops.
