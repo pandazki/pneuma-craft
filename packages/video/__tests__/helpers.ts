@@ -11,7 +11,16 @@ import type {
   ClockState,
   MediaInfo,
 } from '../src/types.js';
-import type { Composition, CompositionSettings, Track, Clip, ResolvedFrame, ResolvedClip } from '@pneuma-craft/timeline';
+import type {
+  Composition,
+  CompositionSettings,
+  Track,
+  Clip,
+  PreviewFrame,
+  ResolvedFrame,
+  ResolvedClip,
+  ResolvedPreviewFrame,
+} from '@pneuma-craft/timeline';
 
 // ── Composition Factories ──────────────────────────────────────────────
 
@@ -42,10 +51,21 @@ export function createMockTrack(overrides: Partial<Track> = {}): Track {
     type: 'video',
     name: 'Video 1',
     clips: [],
+    previewFrames: [],
     muted: false,
     volume: 1,
     locked: false,
     visible: true,
+    ...overrides,
+  };
+}
+
+export function createMockPreviewFrame(overrides: Partial<PreviewFrame> = {}): PreviewFrame {
+  return {
+    id: 'pf-1',
+    trackId: 'track-1',
+    time: 0,
+    assetId: 'image-asset-1',
     ...overrides,
   };
 }
@@ -209,8 +229,12 @@ export function createMockMediaInfo(overrides: Partial<MediaInfo> = {}): MediaIn
   };
 }
 
-export function createMockResolvedFrame(time: number, clips: ResolvedClip[] = []): ResolvedFrame {
-  return { time, clips };
+export function createMockResolvedFrame(
+  time: number,
+  clips: ResolvedClip[] = [],
+  previewFrames: ResolvedPreviewFrame[] = [],
+): ResolvedFrame {
+  return { time, clips, previewFrames };
 }
 
 export function createMockResolvedClip(overrides: Partial<ResolvedClip> = {}): ResolvedClip {

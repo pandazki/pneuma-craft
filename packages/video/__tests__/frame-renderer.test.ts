@@ -6,6 +6,7 @@ import {
   createMockComposition,
   createMockTrack,
   createMockClip,
+  createMockPreviewFrame,
   createMockCanvasImageSource,
 } from './helpers.js';
 
@@ -419,5 +420,182 @@ describe('createFrameRenderer', () => {
     const [[layers]] = vi.mocked(compositor.composite).mock.calls;
     expect(layers).toHaveLength(1);
     expect(layers[0].source).toBe(subImage);
+  });
+
+  // ── Preview frames ─────────────────────────────────────────────────
+
+  it('preview frame renders when includePreviewFrames=true and no clip covers T', async () => {
+    const decoder = createMockMediaDecoder();
+    const compositor = createMockCompositor();
+    const renderer = createFrameRenderer(decoder, compositor, 1920, 1080, {
+      includePreviewFrames: true,
+    });
+
+    const pf = createMockPreviewFrame({ id: 'pf-1', trackId: 'vt', time: 4, assetId: 'sketch-asset' });
+    const track = createMockTrack({ id: 'vt', type: 'video', previewFrames: [pf] });
+    const composition = createMockComposition({ tracks: [track], duration: 14 });
+
+    await renderer.renderFrame(composition, 5);
+
+    // Preview frame's image asset is decoded with localTime=0 (image fast path)
+    expect(decoder.decodeVideoFrame).toHaveBeenCalledWith('sketch-asset', 0, 1920, 1080);
+    const [[layers]] = vi.mocked(compositor.composite).mock.calls;
+    expect(layers).toHaveLength(1);
+  });
+
+  it('preview frame is suppressed when includePreviewFrames=false (export default)', async () => {
+    const decoder = createMockMediaDecoder();
+    const compositor = createMockCompositor();
+    const renderer = createFrameRenderer(decoder, compositor, 1920, 1080, {
+      includePreviewFrames: false,
+    });
+
+    const pf = createMockPreviewFrame({ id: 'pf-1', trackId: 'vt', time: 4, assetId: 'sketch-asset' });
+    const track = createMockTrack({ id: 'vt', type: 'video', previewFrames: [pf] });
+    const composition = createMockComposition({ tracks: [track], duration: 14 });
+
+    await renderer.renderFrame(composition, 5);
+
+    expect(decoder.decodeVideoFrame).not.toHaveBeenCalled();
+    const [[layers]] = vi.mocked(compositor.composite).mock.calls;
+    expect(layers).toHaveLength(0);
+  });
+
+  it('default (no options) does not render preview frames', async () => {
+    const decoder = createMockMediaDecoder();
+    const compositor = createMockCompositor();
+    const renderer = createFrameRenderer(decoder, compositor, 1920, 1080);
+
+    const pf = createMockPreviewFrame({ id: 'pf-1', trackId: 'vt', time: 4, assetId: 'sketch-asset' });
+    const track = createMockTrack({ id: 'vt', type: 'video', previewFrames: [pf] });
+    const composition = createMockComposition({ tracks: [track], duration: 14 });
+
+    await renderer.renderFrame(composition, 5);
+
+    expect(decoder.decodeVideoFrame).not.toHaveBeenCalled();
+  });
+
+  it('clip wins over preview on the same track at the same time (let-go)', async () => {
+    const decoder = createMockMediaDecoder();
+    const compositor = createMockCompositor();
+    const renderer = createFrameRenderer(decoder, compositor, 1920, 1080, {
+      includePreviewFrames: true,
+    });
+
+    const clip = createMockClip({
+      id: 'real', assetId: 'real-asset', trackId: 'vt',
+      startTime: 4, duration: 4, inPoint: 0, outPoint: 4,
+    });
+    const pf = createMockPreviewFrame({ id: 'pf-1', trackId: 'vt', time: 4, assetId: 'sketch-asset' });
+    const track = createMockTrack({ id: 'vt', type: 'video', clips: [clip], previewFrames: [pf] });
+    const composition = createMockComposition({ tracks: [track], duration: 8 });
+
+    // T=5 (covered by clip): only clip rendered, preview suppressed
+    await renderer.renderFrame(composition, 5);
+    expect(decoder.decodeVideoFrame).toHaveBeenCalledWith('real-asset', 1, 1920, 1080);
+    expect(decoder.decodeVideoFrame).not.toHaveBeenCalledWith('sketch-asset', 0, 1920, 1080);
+
+    vi.mocked(decoder.decodeVideoFrame).mockClear();
+    vi.mocked(compositor.composite).mockClear();
+
+    // T=8 (just past clip end, preview at t=4 still wins as the most-recent ≤ T)
+    await renderer.renderFrame(composition, 8);
+    expect(decoder.decodeVideoFrame).toHaveBeenCalledWith('sketch-asset', 0, 1920, 1080);
+  });
+
+  it('multi-track z-order: lower track clip + upper track preview → preview drawn on top', async () => {
+    const decoder = createMockMediaDecoder();
+    const compositor = createMockCompositor();
+    const renderer = createFrameRenderer(decoder, compositor, 1920, 1080, {
+      includePreviewFrames: true,
+    });
+
+    const lowerClip = createMockClip({
+      id: 'lower-clip', assetId: 'lower-video', trackId: 'lower',
+      startTime: 0, duration: 10, inPoint: 0,
+    });
+    const lowerTrack = createMockTrack({ id: 'lower', type: 'video', clips: [lowerClip] });
+
+    const upperPf = createMockPreviewFrame({
+      id: 'upper-pf', trackId: 'upper', time: 0, assetId: 'upper-image',
+    });
+    const upperTrack = createMockTrack({ id: 'upper', type: 'video', previewFrames: [upperPf] });
+
+    const composition = createMockComposition({
+      tracks: [lowerTrack, upperTrack],
+      duration: 10,
+    });
+
+    await renderer.renderFrame(composition, 5);
+
+    const [[layers]] = vi.mocked(compositor.composite).mock.calls;
+    expect(layers).toHaveLength(2);
+    // zIndex 0 = lower track (clip); zIndex 1 = upper track (preview)
+    expect(layers[0].zIndex).toBe(0);
+    expect(layers[1].zIndex).toBe(1);
+    expect(decoder.decodeVideoFrame).toHaveBeenNthCalledWith(1, 'lower-video', 5, 1920, 1080);
+    expect(decoder.decodeVideoFrame).toHaveBeenNthCalledWith(2, 'upper-image', 0, 1920, 1080);
+  });
+
+  it('reordering composition.tracks reorders preview-vs-clip z-stacking accordingly', async () => {
+    const decoder = createMockMediaDecoder();
+    const compositor = createMockCompositor();
+    const renderer = createFrameRenderer(decoder, compositor, 1920, 1080, {
+      includePreviewFrames: true,
+    });
+
+    const clip = createMockClip({
+      id: 'c', assetId: 'video-asset', trackId: 'A',
+      startTime: 0, duration: 10, inPoint: 0,
+    });
+    const pf = createMockPreviewFrame({ id: 'pf', trackId: 'B', time: 0, assetId: 'image-asset' });
+    const trackA = createMockTrack({ id: 'A', type: 'video', clips: [clip] });
+    const trackB = createMockTrack({ id: 'B', type: 'video', previewFrames: [pf] });
+
+    // A above B → clip on top
+    let composition = createMockComposition({ tracks: [trackB, trackA], duration: 10 });
+    await renderer.renderFrame(composition, 5);
+    let calls = vi.mocked(decoder.decodeVideoFrame).mock.calls;
+    expect(calls[0][0]).toBe('image-asset');
+    expect(calls[1][0]).toBe('video-asset');
+
+    vi.mocked(decoder.decodeVideoFrame).mockClear();
+
+    // B above A → preview on top
+    composition = createMockComposition({ tracks: [trackA, trackB], duration: 10 });
+    await renderer.renderFrame(composition, 5);
+    calls = vi.mocked(decoder.decodeVideoFrame).mock.calls;
+    expect(calls[0][0]).toBe('video-asset');
+    expect(calls[1][0]).toBe('image-asset');
+  });
+
+  it('subtitles still composite ABOVE preview frame layers', async () => {
+    const decoder = createMockMediaDecoder();
+    const compositor = createMockCompositor();
+    const subImage = createMockCanvasImageSource();
+    const subtitleRenderer = vi.fn().mockResolvedValue(subImage);
+    const renderer = createFrameRenderer(decoder, compositor, 1920, 1080, {
+      subtitleRenderer,
+      includePreviewFrames: true,
+    });
+
+    const pf = createMockPreviewFrame({ id: 'pf', trackId: 'vt', time: 0, assetId: 'image-asset' });
+    const videoTrack = createMockTrack({ id: 'vt', type: 'video', previewFrames: [pf] });
+    const subClip = createMockClip({
+      id: 's', assetId: 'sub-asset', trackId: 'st',
+      startTime: 0, duration: 10, inPoint: 0, text: 'sub',
+    });
+    const subTrack = createMockTrack({ id: 'st', type: 'subtitle', clips: [subClip] });
+    const composition = createMockComposition({
+      tracks: [videoTrack, subTrack], duration: 10,
+    });
+
+    await renderer.renderFrame(composition, 5);
+
+    const [[layers]] = vi.mocked(compositor.composite).mock.calls;
+    expect(layers).toHaveLength(2);
+    expect(layers[0].zIndex).toBe(0);   // preview
+    expect(layers[1].zIndex).toBe(1);   // subtitle on top
+    expect(layers[1].source).toBe(subImage);
   });
 });

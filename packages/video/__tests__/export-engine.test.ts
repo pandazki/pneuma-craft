@@ -92,6 +92,7 @@ vi.stubGlobal('OfflineAudioContext', vi.fn().mockImplementation(() => ({
 // ── Import after mocks ──────────────────────────────────────────────────────
 
 const { createExportEngine } = await import('../src/export-engine.js');
+const { createFrameRenderer } = await import('../src/frame-renderer.js');
 const { Mp4OutputFormat, WebMOutputFormat, CanvasSource } = await import('mediabunny');
 
 describe('createExportEngine', () => {
@@ -404,5 +405,41 @@ describe('createExportEngine', () => {
 
     // Total frames = ceil(0.1 * 60) = 6
     expect(mockFrameRenderer.renderFrame).toHaveBeenCalledTimes(6);
+  });
+
+  // ── Preview frame option ─────────────────────────────────────────────
+
+  it('default: includePreviewFrames=false (export = finished cut)', async () => {
+    const engine = createExportEngine();
+    const composition = createMockComposition({
+      duration: 0.05,
+      tracks: [createMockTrack({ id: 'vt', clips: [createMockClip({ duration: 0.05 })] })],
+    });
+    await engine.export(composition, {
+      format: 'mp4', videoCodec: 'avc', audioCodec: 'aac',
+      videoBitrate: 5_000_000, audioBitrate: 128_000,
+    }, createMockAssetResolver());
+
+    expect(createFrameRenderer).toHaveBeenCalledWith(
+      expect.anything(), expect.anything(), expect.any(Number), expect.any(Number),
+      expect.objectContaining({ includePreviewFrames: false }),
+    );
+  });
+
+  it('opt-in: includePreviewFrames=true is forwarded to FrameRenderer', async () => {
+    const engine = createExportEngine({ includePreviewFrames: true });
+    const composition = createMockComposition({
+      duration: 0.05,
+      tracks: [createMockTrack({ id: 'vt', clips: [createMockClip({ duration: 0.05 })] })],
+    });
+    await engine.export(composition, {
+      format: 'mp4', videoCodec: 'avc', audioCodec: 'aac',
+      videoBitrate: 5_000_000, audioBitrate: 128_000,
+    }, createMockAssetResolver());
+
+    expect(createFrameRenderer).toHaveBeenCalledWith(
+      expect.anything(), expect.anything(), expect.any(Number), expect.any(Number),
+      expect.objectContaining({ includePreviewFrames: true }),
+    );
   });
 });

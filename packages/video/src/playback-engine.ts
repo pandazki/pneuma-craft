@@ -28,6 +28,13 @@ export interface PlaybackEngineOptions {
    * omitted, subtitle tracks render nothing (legacy behavior).
    */
   subtitleRenderer?: SubtitleRenderer;
+  /**
+   * Render preview frames (planning-layer visuals attached to time points
+   * on a track) when no real clip covers the current time. Defaults to
+   * `true` for the playback engine — the user scrubbing the timeline
+   * should see the agent's planned vibe before any real video clips land.
+   */
+  includePreviewFrames?: boolean;
 }
 
 /** Default per-frame decode timeout. Decodes exceeding this are logged and skipped. */
@@ -41,6 +48,7 @@ export function createPlaybackEngine(options?: PlaybackEngineOptions): PlaybackE
   const compositorType = options?.compositorType ?? 'canvas2d';
   const decodeTimeoutMs = options?.decodeTimeoutMs ?? DEFAULT_DECODE_TIMEOUT_MS;
   const subtitleRenderer = options?.subtitleRenderer;
+  const includePreviewFrames = options?.includePreviewFrames ?? true;
 
   let _state: PlaybackState = 'idle';
   let _playbackRate = 1;
@@ -261,7 +269,7 @@ export function createPlaybackEngine(options?: PlaybackEngineOptions): PlaybackE
           _compositor,
           composition.settings.width,
           composition.settings.height,
-          subtitleRenderer,
+          { subtitleRenderer, includePreviewFrames },
         );
         _clock = createMasterClock({
           audioContext: _audioContext,

@@ -20,10 +20,19 @@ export interface ExportEngineOptions {
    * preview. When omitted, subtitle tracks are skipped during export.
    */
   subtitleRenderer?: SubtitleRenderer;
+  /**
+   * Include preview frames (planning-layer visuals attached to time points
+   * on a track) in the exported video. Defaults to `false` because an export
+   * normally represents a finished cut. Set true for review-grade exports of
+   * unfinished timelines — e.g., agent producing a "草样片" for the user to
+   * scrub before committing to expensive real renders.
+   */
+  includePreviewFrames?: boolean;
 }
 
 export function createExportEngine(options?: ExportEngineOptions): ExportEngine {
   const subtitleRenderer = options?.subtitleRenderer;
+  const includePreviewFrames = options?.includePreviewFrames ?? false;
   const progressListeners = new Set<(progress: number) => void>();
   let abortController: AbortController | null = null;
 
@@ -52,7 +61,10 @@ export function createExportEngine(options?: ExportEngineOptions): ExportEngine 
       const decoderAudioCtx = new OfflineAudioContext(1, 1, composition.settings.sampleRate || 48000);
       const decoder = createMediaDecoder(resolver, decoderAudioCtx);
       const compositor = await createCompositor(width, height, 'canvas2d');
-      const renderer = createFrameRenderer(decoder, compositor, width, height, subtitleRenderer);
+      const renderer = createFrameRenderer(decoder, compositor, width, height, {
+        subtitleRenderer,
+        includePreviewFrames,
+      });
 
       try {
         const format = options.format === 'webm'

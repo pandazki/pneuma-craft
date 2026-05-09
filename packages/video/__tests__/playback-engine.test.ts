@@ -115,6 +115,7 @@ vi.mock('../src/audio-scheduler.js', () => ({
 // ── Import after mocks ────────────────────────────────────────────────
 
 import { createPlaybackEngine } from '../src/playback-engine.js';
+import { createFrameRenderer } from '../src/frame-renderer.js';
 
 // ── rAF mock ──────────────────────────────────────────────────────────
 
@@ -704,5 +705,25 @@ describe('createPlaybackEngine', () => {
 
     expect(firstClock.destroy).toHaveBeenCalled();
     expect(firstScheduler.destroy).toHaveBeenCalled();
+  });
+
+  // ── 15. Preview frames option ──────────────────────────────────────
+
+  it('default: includePreviewFrames=true (playback shows planning visuals)', async () => {
+    const engine = createPlaybackEngine();
+    await engine.load(composition, resolver);
+    expect(createFrameRenderer).toHaveBeenCalledWith(
+      expect.anything(), expect.anything(), expect.any(Number), expect.any(Number),
+      expect.objectContaining({ includePreviewFrames: true }),
+    );
+  });
+
+  it('opt-out: includePreviewFrames=false is forwarded to FrameRenderer', async () => {
+    const engine = createPlaybackEngine({ includePreviewFrames: false });
+    await engine.load(composition, resolver);
+    expect(createFrameRenderer).toHaveBeenCalledWith(
+      expect.anything(), expect.anything(), expect.any(Number), expect.any(Number),
+      expect.objectContaining({ includePreviewFrames: false }),
+    );
   });
 });
