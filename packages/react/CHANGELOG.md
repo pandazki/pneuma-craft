@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.1
+
+### Patch Changes
+
+- Updated dependencies [c7a09ae]
+  - @pneuma-craft/timeline@0.4.0
+  - @pneuma-craft/video@0.5.0
+
 All notable changes to `@pneuma-craft/react` will be documented in this file.
 
 ## 0.3.0

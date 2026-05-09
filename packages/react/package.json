@@ -1,6 +1,6 @@
 {
   "name": "@pneuma-craft/react",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "React 19 components and hooks for pneuma-craft",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -18,7 +18,11 @@
       }
     }
   },
-  "files": ["dist", "README.md", "CHANGELOG.md"],
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md"
+  ],
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
