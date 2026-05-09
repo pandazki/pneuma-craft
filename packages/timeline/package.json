@@ -1,6 +1,6 @@
 {
   "name": "@pneuma-craft/timeline",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Composition model — tracks, clips, time-based arrangement",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -18,7 +18,11 @@
       }
     }
   },
-  "files": ["dist", "README.md", "CHANGELOG.md"],
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md"
+  ],
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
