@@ -15,6 +15,20 @@ bun add @pneuma-craft/video
 - **Exporter** — renders frame-by-frame via WebCodecs `VideoEncoder`, mixes audio via `OfflineAudioContext`, muxes via MediaBunny `Output`
 - **Pluggable subtitle renderer** — shared between preview and export
 
+## Playback transport semantics
+
+`PlaybackEngine` follows the HTML media element for the end of the timeline, so
+a Play button needs no special-casing:
+
+- The rAF loop pauses at `currentTime === duration` (unless a `loop` region is
+  set), and `engine.ended` becomes `true`.
+- `play()` while `ended` rewinds to `0` and restarts from the top — one clean
+  `paused` → `playing` transition, no one-frame flicker.
+- `play()` on a zero-duration composition is a no-op and leaves `state` alone.
+- Read `engine.ended` (mirrored as `usePlayback().ended` in
+  `@pneuma-craft/react`) to render a replay affordance instead of comparing
+  `currentTime` against `duration` yourself.
+
 ## Browser support
 
 Requires WebCodecs (`VideoDecoder`/`VideoEncoder`) and modern Canvas 2D. Tested on Chromium-based browsers and Safari Tech Preview.

@@ -134,9 +134,33 @@ export type PlaybackState = 'idle' | 'loading' | 'ready' | 'playing' | 'paused';
 export interface PlaybackEngine {
   readonly state: PlaybackState;
   readonly currentTime: number;
+  /**
+   * True when the playhead sits at the end of the composition and playback
+   * cannot continue from there — i.e. a composition is loaded, no `loop`
+   * region is set, `duration > 0`, and `currentTime` has reached `duration`.
+   *
+   * Positional, like the HTML media element's `ended`: it becomes true both
+   * when playback runs to its natural end and when a consumer seeks to the
+   * end, and false again as soon as the playhead moves back. Transports can
+   * read it to render a "replay" affordance instead of re-deriving
+   * `currentTime >= duration ± ε` themselves.
+   */
+  readonly ended: boolean;
   playbackRate: number;
   loop: { start: number; end: number } | null;
   load(composition: Composition, resolver: AssetResolver): Promise<void>;
+  /**
+   * Start playback.
+   *
+   * - When `ended` is true, the playhead first rewinds to 0 and playback
+   *   restarts from the top (the HTML media element semantic, and what every
+   *   video transport does on Play-at-end).
+   * - When the composition has zero duration there is nothing to play: the
+   *   call is a documented no-op that leaves `state` untouched (no
+   *   `playing` → `paused` flicker).
+   *
+   * Throws when no composition is loaded.
+   */
   play(): void;
   pause(): void;
   seek(time: number): void;

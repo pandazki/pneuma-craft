@@ -6,6 +6,13 @@ export interface PlaybackHookState {
   readonly state: PlaybackState;
   readonly currentTime: number;
   readonly duration: number;
+  /**
+   * True when the playhead sits at the end of the composition (no loop region,
+   * non-zero duration). Render a "replay" affordance off this instead of
+   * comparing `currentTime` to `duration` yourself — `play()` restarts from
+   * the top in this state.
+   */
+  readonly ended: boolean;
   readonly playbackRate: number;
   readonly loop: { start: number; end: number } | null;
   readonly play: () => void;
@@ -21,6 +28,7 @@ export function usePlayback(): PlaybackHookState {
       state: s.playbackState,
       currentTime: s.currentTime,
       duration: s.duration,
+      ended: s.ended,
       playbackRate: s.playbackRate,
       loop: s.loop,
       play: s.play,

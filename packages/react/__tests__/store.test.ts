@@ -8,6 +8,7 @@ function createMockPlaybackEngine() {
   return {
     state: 'idle' as string,
     currentTime: 0,
+    ended: false,
     playbackRate: 1,
     loop: null as { start: number; end: number } | null,
     load: vi.fn().mockResolvedValue(undefined),
@@ -441,6 +442,38 @@ describe('playback engine lifecycle', () => {
 
     store.getState().pause();
     expect(store.getState().playbackState).toBe('paused');
+  });
+
+  it('seek(time) mirrors the engine\'s ended flag into the store', async () => {
+    const { store } = createStoreWithComposition();
+
+    store.getState().play();
+    await flushPromises();
+    expect(store.getState().ended).toBe(false);
+
+    mockPlaybackEngine.ended = true;
+    store.getState().seek(10);
+    expect(store.getState().ended).toBe(true);
+
+    mockPlaybackEngine.ended = false;
+    store.getState().seek(0);
+    expect(store.getState().ended).toBe(false);
+  });
+
+  it('setLoop refreshes ended (a loop region suppresses end-of-timeline)', async () => {
+    const { store } = createStoreWithComposition();
+
+    store.getState().play();
+    await flushPromises();
+
+    mockPlaybackEngine.ended = true;
+    store.getState().seek(10);
+    expect(store.getState().ended).toBe(true);
+
+    // Engine reports ended=false once a loop region is set.
+    mockPlaybackEngine.ended = false;
+    store.getState().setLoop({ start: 0, end: 5 });
+    expect(store.getState().ended).toBe(false);
   });
 
   it('seek(time) delegates to engine when engine exists', async () => {

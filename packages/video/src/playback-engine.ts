@@ -40,6 +40,13 @@ export interface PlaybackEngineOptions {
 /** Default per-frame decode timeout. Decodes exceeding this are logged and skipped. */
 const DEFAULT_DECODE_TIMEOUT_MS = 1000;
 
+/**
+ * Float slack for the end-of-timeline comparison. The clock clamps
+ * `currentTime` to `duration`, so reaching the end is an exact equality in
+ * practice; this only absorbs rounding in a caller-supplied seek target.
+ */
+const END_EPSILON = 1e-6;
+
 /** Enables verbose rAF-loop logs for debugging playback stalls. */
 const DEBUG_LOOP = typeof globalThis !== 'undefined'
   && (globalThis as { __PNEUMA_CRAFT_PLAYBACK_DEBUG__?: boolean }).__PNEUMA_CRAFT_PLAYBACK_DEBUG__ === true;
@@ -219,6 +226,14 @@ export function createPlaybackEngine(options?: PlaybackEngineOptions): PlaybackE
       return _clock?.currentTime ?? 0;
     },
 
+    get ended() {
+      if (!_clock || !_composition) return false;
+      if (_clock.loop) return false;
+      const duration = _composition.duration;
+      if (duration <= 0) return false;
+      return _clock.currentTime >= duration - END_EPSILON;
+    },
+
     get playbackRate() {
       return _clock?.playbackRate ?? _playbackRate;
     },
@@ -318,6 +333,25 @@ export function createPlaybackEngine(options?: PlaybackEngineOptions): PlaybackE
         throw new Error('Cannot play: no composition loaded. Call load() first.');
       }
       if (_state === 'playing') return;
+
+      // Nothing to play. Accepting the call here would start the rAF loop only
+      // for it to hit the end-of-timeline check on the very first tick, which
+      // shows up in consumers as a one-frame 'playing' → 'paused' flicker.
+      if (_composition.duration <= 0) {
+        console.warn('[PlaybackEngine] play() ignored: composition has zero duration.');
+        return;
+      }
+
+      // Play at end-of-timeline restarts from the top, matching the HTML media
+      // element algorithm (and every video transport users have ever used).
+      // Without this the call would be self-absorbing: the clock resumes from
+      // `duration`, the first tick satisfies the end check, and the engine
+      // re-pauses having gone nowhere.
+      if (engine.ended) {
+        _seekId++; // discard any in-flight paused-seek render at the old position
+        _clock.seek(0);
+        emitTimeUpdate(_clock.currentTime);
+      }
 
       // AudioContext may start in 'suspended' state because it was created
       // inside engine.load() after awaits, losing the user-gesture chain.

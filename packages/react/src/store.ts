@@ -34,6 +34,12 @@ export interface PneumaCraftStore {
   readonly playbackState: PlaybackState;
   readonly currentTime: number;
   readonly duration: number;
+  /**
+   * True when the playhead sits at the end of the composition — mirrors
+   * `PlaybackEngine.ended`. Transports use it to render a "replay" affordance;
+   * calling `play()` in this state restarts from the top.
+   */
+  readonly ended: boolean;
   readonly playbackRate: number;
   readonly loop: { start: number; end: number } | null;
 
@@ -130,10 +136,10 @@ export function createPneumaCraftStore(
       });
 
       engine.onTimeUpdate((time) => {
-        set({ currentTime: time });
+        set({ currentTime: time, ended: engine.ended });
       });
       engine.onStateChange((state) => {
-        set({ playbackState: state });
+        set({ playbackState: state, ended: engine.ended });
       });
       engine.onFrameRendered((frame) => {
         for (const cb of frameListeners) cb(frame);
@@ -191,6 +197,9 @@ export function createPneumaCraftStore(
           events: timelineCore.getEvents(),
           duration: composition.duration,
           currentTime: preservedTime,
+          // Optimistic reset — the engine emits the authoritative value on its
+          // first time update after the reload seek above.
+          ended: false,
         };
       } else {
         engines.playback.destroy();
@@ -209,6 +218,7 @@ export function createPneumaCraftStore(
         duration: 0,
         playbackState: 'idle' as PlaybackState,
         currentTime: 0,
+        ended: false,
       };
     }
 
@@ -234,6 +244,7 @@ export function createPneumaCraftStore(
     playbackState: 'idle',
     currentTime: 0,
     duration: 0,
+    ended: false,
     playbackRate: 1,
     loop: null,
 
@@ -293,6 +304,7 @@ export function createPneumaCraftStore(
       set({ currentTime: time });
       if (engines.playback) {
         engines.playback.seek(time);
+        set({ ended: engines.playback.ended });
         return;
       }
       // No engine yet — lazy-init so seek-before-play paints a frame.
@@ -318,6 +330,8 @@ export function createPneumaCraftStore(
       set({ loop });
       if (engines.playback) {
         engines.playback.loop = loop;
+        // A loop region suppresses end-of-timeline; clearing it can reveal it.
+        set({ ended: engines.playback.ended });
       }
     },
 

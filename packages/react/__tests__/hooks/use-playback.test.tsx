@@ -11,6 +11,7 @@ describe('usePlayback', () => {
     expect(result.current.state).toBe('idle');
     expect(result.current.currentTime).toBe(0);
     expect(result.current.duration).toBe(0);
+    expect(result.current.ended).toBe(false);
     expect(result.current.playbackRate).toBe(1);
     expect(result.current.loop).toBeNull();
   });
