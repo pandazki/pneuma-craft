@@ -6,6 +6,9 @@ export type { PneumaCraftProviderProps } from './provider.js';
 export { createPneumaCraftStore } from './store.js';
 export type { PneumaCraftStore, PneumaCraftStoreApi, PneumaCraftStoreOptions } from './store.js';
 
+// ── Errors ─────────────────────────────────────────────────────────────
+export { StoreDestroyedError, isStoreDestroyedError } from './errors.js';
+
 // ── Context ────────────────────────────────────────────────────────────
 export { usePneumaCraftStore } from './context.js';
 
