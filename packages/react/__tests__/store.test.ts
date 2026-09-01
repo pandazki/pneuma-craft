@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createPneumaCraftStore, type PneumaCraftStoreApi } from '../src/store.js';
+import { isStoreDestroyedError } from '../src/errors.js';
 import { createMockAssetResolver } from './helpers.js';
 
 // ── Mock @pneuma-craft/video ──────────────────────────────────────────
@@ -778,7 +779,10 @@ describe('store destroy', () => {
     expect(mockPlaybackEngine.destroy).toHaveBeenCalled();
   });
 
-  it('destroy during lazy init prevents engine from being stored', async () => {
+  it('destroy during lazy init abandons play() quietly (teardown is not a failure)', async () => {
+    const { createPlaybackEngine } = await import('@pneuma-craft/video');
+    const createSpy = createPlaybackEngine as ReturnType<typeof vi.fn>;
+    createSpy.mockClear();
     const { store } = createStoreWithComposition();
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
@@ -788,15 +792,71 @@ describe('store destroy', () => {
     // Destroy immediately — sets destroyed flag before async import resolves
     store.getState().destroy();
 
-    // Let the async init run — it should detect destroyed and throw
+    // Let the async init run — it should detect destroyed and bail
     await flushPromises();
 
-    // The play() promise should have caught the "Store destroyed" error
+    // The engine must not be left dangling, and the cancellation must not be
+    // reported as a failure (this is the StrictMode double-mount path).
+    expect(createSpy).not.toHaveBeenCalled();
+    expect(errorSpy).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+
+  it('destroy during lazy init abandons seek() quietly', async () => {
+    const { store } = createStoreWithComposition();
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    store.getState().seek(3.5);
+    store.getState().destroy();
+    await flushPromises();
+
+    expect(errorSpy).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+
+  it('seek() after destroy creates no engine and logs nothing', async () => {
+    const { createPlaybackEngine } = await import('@pneuma-craft/video');
+    const createSpy = createPlaybackEngine as ReturnType<typeof vi.fn>;
+    createSpy.mockClear();
+    const { store } = createStoreWithComposition();
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    store.getState().destroy();
+    store.getState().seek(2);
+    await flushPromises();
+
+    expect(createSpy).not.toHaveBeenCalled();
+    expect(errorSpy).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+
+  it('a genuine seek failure is still reported loudly after the teardown fix', async () => {
+    const { createPlaybackEngine } = await import('@pneuma-craft/video');
+    const createSpy = createPlaybackEngine as ReturnType<typeof vi.fn>;
+    createSpy.mockClear();
+    createSpy.mockImplementationOnce(() => { throw new Error('boom'); });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const { store } = createStoreWithComposition();
+    store.getState().seek(4);
+    await flushPromises();
+
     expect(errorSpy).toHaveBeenCalledWith(
-      '[PneumaCraft] Failed to start playback:',
-      expect.objectContaining({ message: 'Store destroyed' }),
+      '[PneumaCraft] Failed to seek:',
+      expect.objectContaining({ message: 'boom' }),
     );
     errorSpy.mockRestore();
+  });
+
+  it('exportComposition rejects with a machine-checkable StoreDestroyedError', async () => {
+    const { store } = createStoreWithComposition();
+
+    const promise = store.getState().exportComposition(EXPORT_OPTIONS);
+    store.getState().destroy();
+
+    await expect(promise).rejects.toSatisfy(isStoreDestroyedError);
+    // The export guard must also be released, not left stuck on.
+    expect(store.getState().exporting).toBe(false);
   });
 
   it('destroy() clears frame listeners', async () => {

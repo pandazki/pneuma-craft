@@ -11,6 +11,7 @@ import type {
   CompositionCommand,
 } from '@pneuma-craft/timeline';
 import { createTimelineCore } from '@pneuma-craft/timeline';
+import { StoreDestroyedError, isStoreDestroyedError } from './errors.js';
 import type {
   PlaybackState,
   ExportOptions,
@@ -115,6 +116,8 @@ export function createPneumaCraftStore(
   ): Promise<PlaybackEngine> {
     if (engines.playback) return engines.playback;
     if (playbackInitPromise) return playbackInitPromise;
+    // Torn down already — don't even reach for the video chunk.
+    if (destroyed) throw new StoreDestroyedError();
 
     playbackInitPromise = (async () => {
       // Guard: refuse to create a half-initialized engine when there is no
@@ -125,7 +128,7 @@ export function createPneumaCraftStore(
       }
 
       const { createPlaybackEngine } = await import('@pneuma-craft/video');
-      if (destroyed) throw new Error('Store destroyed');
+      if (destroyed) throw new StoreDestroyedError();
 
       const composition = get().composition;
       if (!composition) throw new Error('Composition removed during init');
@@ -148,7 +151,7 @@ export function createPneumaCraftStore(
       await engine.load(composition, get()._assetResolver);
       if (destroyed) {
         engine.destroy();
-        throw new Error('Store destroyed');
+        throw new StoreDestroyedError();
       }
 
       // Apply deferred playback settings
@@ -188,7 +191,10 @@ export function createPneumaCraftStore(
               engineRef.seek(preservedTime);
             }
           })
-          .catch(console.error);
+          .catch((err) => {
+            if (destroyed || isStoreDestroyedError(err)) return;
+            console.error('[PneumaCraft] Failed to reload composition:', err);
+          });
         return {
           coreState: timelineCore.getCoreState(),
           composition,
@@ -286,6 +292,8 @@ export function createPneumaCraftStore(
           // State will be updated by onStateChange callback
         })
         .catch((err) => {
+          // Teardown cancelled the work — expected, not a failure to report.
+          if (isStoreDestroyedError(err)) return;
           console.error('[PneumaCraft] Failed to start playback:', err);
         });
     },
@@ -315,6 +323,8 @@ export function createPneumaCraftStore(
           engine.seek(time);
         })
         .catch((err) => {
+          // Teardown cancelled the work — expected, not a failure to report.
+          if (isStoreDestroyedError(err)) return;
           console.error('[PneumaCraft] Failed to seek:', err);
         });
     },
@@ -350,7 +360,7 @@ export function createPneumaCraftStore(
 
       try {
         const { createExportEngine } = await import('@pneuma-craft/video');
-        if (destroyed) throw new Error('Store destroyed');
+        if (destroyed) throw new StoreDestroyedError();
         engines.export = createExportEngine({ subtitleRenderer });
 
         const unsubProgress = engines.export.onProgress((progress) => {
