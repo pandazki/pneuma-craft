@@ -726,4 +726,151 @@ describe('createPlaybackEngine', () => {
       expect.objectContaining({ includePreviewFrames: false }),
     );
   });
+  // ── 16. End-of-timeline semantics ──────────────────────────────────
+
+  it('ended is false right after load', async () => {
+    const engine = createPlaybackEngine();
+    await engine.load(composition, resolver);
+    expect(engine.ended).toBe(false);
+  });
+
+  it('ended becomes true when the playhead reaches the end', async () => {
+    const engine = createPlaybackEngine();
+    await engine.load(composition, resolver);
+
+    engine.seek(10);
+
+    expect(engine.currentTime).toBe(10);
+    expect(engine.ended).toBe(true);
+  });
+
+  it('ended is false while a loop region is set', async () => {
+    const engine = createPlaybackEngine();
+    await engine.load(composition, resolver);
+    engine.loop = { start: 0, end: 5 };
+
+    engine.seek(10);
+
+    expect(engine.ended).toBe(false);
+  });
+
+  it('the rAF loop pauses at the end and reports ended', async () => {
+    const engine = createPlaybackEngine();
+    await engine.load(composition, resolver);
+
+    engine.play();
+    engine.seek(10);
+    flushRaf();
+
+    expect(engine.state).toBe('paused');
+    expect(engine.ended).toBe(true);
+  });
+
+  it('play() at end-of-timeline rewinds to 0 and keeps playing', async () => {
+    const engine = createPlaybackEngine();
+    await engine.load(composition, resolver);
+
+    engine.play();
+    engine.seek(10);
+    flushRaf();
+    expect(engine.state).toBe('paused');
+
+    engine.play();
+
+    expect(engine.currentTime).toBe(0);
+    expect(engine.ended).toBe(false);
+    expect(engine.state).toBe('playing');
+
+    // The next tick must NOT re-trigger the end-of-timeline pause.
+    flushRaf();
+    expect(engine.state).toBe('playing');
+  });
+
+  it('play() at end-of-timeline emits a time update for the rewind', async () => {
+    const engine = createPlaybackEngine();
+    await engine.load(composition, resolver);
+    engine.seek(10);
+
+    const times: number[] = [];
+    engine.onTimeUpdate(t => times.push(t));
+    engine.play();
+
+    expect(times[0]).toBe(0);
+  });
+
+  it('play() at end-of-timeline restarts audio from 0', async () => {
+    const engine = createPlaybackEngine();
+    await engine.load(composition, resolver);
+    engine.seek(10);
+
+    engine.play();
+
+    expect(latestMockScheduler.play).toHaveBeenCalledWith(0, composition, expect.any(Function));
+  });
+
+  it('play() at end-of-timeline produces no playing → paused flicker', async () => {
+    const engine = createPlaybackEngine();
+    await engine.load(composition, resolver);
+
+    engine.play();
+    engine.seek(10);
+    flushRaf();
+
+    const states: PlaybackState[] = [];
+    engine.onStateChange(s => states.push(s));
+
+    engine.play();
+    flushRaf();
+    flushRaf();
+
+    expect(states).toEqual(['playing']);
+  });
+
+  it('play() at end-of-timeline does not rewind when a loop region is set', async () => {
+    const engine = createPlaybackEngine();
+    await engine.load(composition, resolver);
+    engine.loop = { start: 2, end: 8 };
+    engine.seek(10);
+
+    engine.play();
+
+    expect(engine.currentTime).toBe(10);
+    expect(engine.state).toBe('playing');
+  });
+
+  it('play() mid-composition does not rewind', async () => {
+    const engine = createPlaybackEngine();
+    await engine.load(composition, resolver);
+    engine.seek(4);
+
+    engine.play();
+
+    expect(engine.currentTime).toBe(4);
+    expect(engine.state).toBe('playing');
+  });
+
+  it('play() on a zero-duration composition is a no-op with no state change', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const engine = createPlaybackEngine();
+    await engine.load(createMockComposition({ duration: 0, tracks: [] }), resolver);
+
+    const states: PlaybackState[] = [];
+    engine.onStateChange(s => states.push(s));
+    engine.play();
+
+    expect(engine.state).toBe('ready');
+    expect(states).toEqual([]);
+    expect(warn).toHaveBeenCalled();
+  });
+
+  it('ended is false for a zero-duration composition', async () => {
+    const engine = createPlaybackEngine();
+    await engine.load(createMockComposition({ duration: 0, tracks: [] }), resolver);
+    expect(engine.ended).toBe(false);
+  });
+
+  it('ended is false with no composition loaded', () => {
+    const engine = createPlaybackEngine();
+    expect(engine.ended).toBe(false);
+  });
 });

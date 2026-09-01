@@ -14,6 +14,7 @@ vi.mock('@pneuma-craft/video', async (importOriginal) => {
     createPlaybackEngine: vi.fn(() => ({
       state: 'idle',
       currentTime: 0,
+      ended: false,
       playbackRate: 1,
       loop: null,
       load: vi.fn().mockResolvedValue(undefined),
